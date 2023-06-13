@@ -640,7 +640,6 @@ pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t c
   LddNode *zero = Cudd_Not(one);
 
   // positive
-
   result.pos = lddUniqueInter(ldd, cons_index, Cudd_Regular(f), complement ? one : zero);
   if (Cudd_IsComplement(f))
     result.pos = Cudd_Complement(result.pos);
@@ -659,6 +658,8 @@ pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t c
 
   return result;
 }
+
+// added comment lol
 
 pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, tvpi_cons_t cons, bool complement) {
   
@@ -781,18 +782,23 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
   LddNode *zero = Ldd_Not(one);
   LddNode *t = Ldd_T(f);
   LddNode *e = Ldd_E(f);
+  LddNode *cons_node = Ldd_FromCons(ldd, (lincons_t)cons);
+  LddNode *tmp_then, tmp_else;
 
   pair_LddNode_t result = new_pair_LddNode();
   Split_action_t action = Split_ChooseAction(ldd, f, cons);
+
   bool node_comp = Cudd_IsComplement(f) ? !complement : complement;
   int f_index = Cudd_Regular(f)->index;
+  int cons_index = cons_node->index;
+
   switch(action) {
   case SUBS:
     if (node_comp) {
       result.pos = t == one ? one : lddUniqueInter(ldd, f_index, t, one);
       result.neg = e == one ? one : lddUniqueInter(ldd, f_index, one, e);
     } else {
-      result.pos = t == zero ? zero : lddUniqueInter(ldd, f_index, t, zero);
+      result.pos = lddUniqueInter(ldd, f_index, t, zero);
       result.neg = e == zero ? one  : lddUniqueInter(ldd, f_index, one, Cudd_Not(e));
       result.neg = Cudd_Not(result.neg);
     }
@@ -801,8 +807,31 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
       result.neg = Cudd_Not(result.neg);
     }
     return result;
-  break;
+    break;
   case SUBS_THEN:
+    if (node_comp) {
+      result.pos = t == one ? one : lddUniqueInter(ldd, cons_index, t, one);
+      result.pos = Cudd_Not(result.pos);
+
+      tmp_then = t == one ? one : lddUniqueInter(ldd, cons_index, one, t);
+      result.neg = lddUniqueInter(ldd, f_index, tmp_then, e);
+      result.neg = Cudd_Not(result.neg);
+    } else {
+      result.pos = lddUniqueInter(ldd, cons_index, t, zero);
+
+      tmp_then = lddUniqueInter(ldd, cons_index, one, Cudd_Not(t));
+      result.neg = lddUniqueInter(ldd, f_index, tmp_then, Cudd_Not(e));
+      result.neg = Cudd_Not(result.neg);
+    }
+    if (complement) {
+      result.pos = Cudd_Not(result.pos);
+      result.neg = Cudd_Not(result.neg);
+    }
+    fprintf(stdout, "positive ldd:\n");
+    Ldd_DumpDotVerbose(ldd, result.pos, stdout);
+    fprintf(stdout, "negative ldd:\n");
+    Ldd_DumpDotVerbose(ldd, result.neg, stdout);
+    return result;
   break;
   case SUBS_ELSE:
   break;

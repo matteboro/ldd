@@ -60,51 +60,50 @@ void test0() {
 
   fprintf (stdout, "\n\nTEST 1\n");
   
-  /* 0: x1 <= -1 */
-  d[i] = Ldd_FromCons (ldd, CONS (x1,4,-1));
-  Ldd_Ref (d[i++]);
+  // /* 0: x1 <= -1 */
+  // d[i] = Ldd_FromCons (ldd, CONS (x1,4,-1));
+  // Ldd_Ref (d[i++]);
 
-  /* 1: x1 <= 1 */
-  d[i] = Ldd_FromCons (ldd, CONS (x1,4,1));
-  Ldd_Ref (d[i++]);
+  // /* 1: x1 <= 1 */
+  // d[i] = Ldd_FromCons (ldd, CONS (x1,4,1));
+  // Ldd_Ref (d[i++]);
 
-  /* 2: x2 <= 0 */
-  d[i] = Ldd_FromCons (ldd, CONS (x2,4,0));
-  Ldd_Ref (d[i++]);
+  // /* 2: x2 <= 0 */
+  // d[i] = Ldd_FromCons (ldd, CONS (x2,4,0));
+  // Ldd_Ref (d[i++]);
 
-  /* 3: x3 <= 0 */
-  d[i] = Ldd_FromCons (ldd, CONS (x3,4,0));
-  Ldd_Ref (d[i++]);
+  // /* 3: x3 <= 0 */
+  // d[i] = Ldd_FromCons (ldd, CONS (x3,4,0));
+  // Ldd_Ref (d[i++]);
+
+  // /* 4: x1 <= 4 */
+  // d[i] = Ldd_FromCons (ldd, CONS (x1,4,4));
+  // Ldd_Ref (d[i++]);
 
   /* 4: x1 <= 4 */
-  d[i] = Ldd_FromCons (ldd, CONS (x1,4,4));
-  Ldd_Ref (d[i++]);
-
-  r1 = Ldd_And(ldd, d[1], d[3]);
-  Ldd_Ref(r1);
-
-  Ldd_DumpDotVerbose(ldd, r1, stdout);
+  
+  LddNode *x1_leq_4 = Ldd_FromCons (ldd, CONS (x1,4,4));
+  Ldd_Ref(x1_leq_4);
 
   // MY_SPLIT_IMPL
 
   fprintf(stdout, "my split implementation:\n\n");
 
-  LddNode** nodes2 = Ldd_SplitBoxTheory(ldd, r1, CONS(x3,4,0));
+  LddNode** nodes2 = Ldd_SplitBoxTheory(ldd, x1_leq_4, CONS(x1,4,1));
 
   Ldd_DumpDotVerbose(ldd, nodes2[0], stdout);
   Ldd_DumpDotVerbose(ldd, nodes2[1], stdout);
 
   free(nodes2);
 
-
   // LDD_AND_SPLIT
 
   fprintf(stdout, "\nldd and implementation:\n\n");
 
-  LddNode* cons_node = Ldd_FromCons(ldd, CONS(x3,4,0));
+  LddNode* cons_node = Ldd_FromCons(ldd, CONS(x1,4,1));
 
-  LddNode* pos_ldd = Ldd_And(ldd, r1, cons_node);
-  LddNode* neg_ldd = Ldd_And(ldd, r1, Ldd_Not(cons_node));
+  LddNode* pos_ldd = Ldd_And(ldd, x1_leq_4, cons_node);
+  LddNode* neg_ldd = Ldd_And(ldd, x1_leq_4, Ldd_Not(cons_node));
 
   Ldd_DumpDotVerbose(ldd, pos_ldd, stdout);
   Ldd_DumpDotVerbose(ldd, neg_ldd, stdout);
