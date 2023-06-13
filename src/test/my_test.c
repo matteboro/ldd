@@ -81,9 +81,11 @@ void test0() {
   // Ldd_Ref (d[i++]);
 
   /* 4: x1 <= 4 */
-  
+
   LddNode *x1_leq_4 = Ldd_FromCons (ldd, CONS (x1,4,4));
   Ldd_Ref(x1_leq_4);
+
+  Ldd_DumpDotVerbose(ldd, x1_leq_4, stdout);
 
   // MY_SPLIT_IMPL
 

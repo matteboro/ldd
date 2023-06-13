@@ -926,6 +926,49 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
 
 ///////////////    END SPLIT    ///////////////
 
+bool Ldd_AtLeastOneSameVariableTriad(LddManager *ldd, LddNode* f, int var) {
+
+  if (Cudd_IsConstant(f))
+    return False;
+
+  if (node_var(ldd, Cudd_Regular(f)) == var) {
+    if (Split_BothChildrenHaveSameVariable(ldd, f)) {
+      return True;
+    }
+  }
+
+  return Ldd_AtLeastOneSameVariableTriad(ldd, Cudd_T(f), var) || Ldd_AtLeastOneSameVariableTriad(ldd, Cudd_E(f), var);
+}
+
+bool Ldd_AtLeastOneOnlyElseChild(LddManager *ldd, LddNode* f, int var) {
+
+  if (Cudd_IsConstant(f))
+    return False;
+
+  if (node_var(ldd, Cudd_Regular(f)) == var) {
+    if (Split_OnlyElseChildHasSameVariable(ldd, f)) {
+      return True;
+    }
+  }
+
+  return Ldd_AtLeastOneOnlyElseChild(ldd, Cudd_T(f), var) || Ldd_AtLeastOneOnlyElseChild(ldd, Cudd_E(f), var);
+}
+
+bool Ldd_AtLeastOneOnlyThenChild(LddManager *ldd, LddNode* f, int var) {
+
+  if (Cudd_IsConstant(f))
+    return False;
+
+  if (node_var(ldd, Cudd_Regular(f)) == var) {
+    if (Split_OnlyThenChildHasSameVariable(ldd, f)) {
+      return True;
+    }
+  }
+
+  return Ldd_AtLeastOneOnlyThenChild(ldd, Cudd_T(f), var) || Ldd_AtLeastOneOnlyThenChild(ldd, Cudd_E(f), var);
+}
+
+
 static tvpi_cst_t 
 new_cst ()
 {

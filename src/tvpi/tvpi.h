@@ -36,6 +36,9 @@ extern "C" {
   int* Ldd_CountOp(LddManager * ldd , LddNode *f);
   void Ldd_DumpBoxTheoryMap(FILE *fp, LddManager *m);
   int Ldd_AllLddsInMapAreBasic(LddManager *m);
+  bool Ldd_AtLeastOneSameVariableTriad(LddManager *ldd, LddNode* f, int var);
+  bool Ldd_AtLeastOneOnlyThenChild(LddManager *ldd, LddNode* f, int var);
+  bool Ldd_AtLeastOneOnlyElseChild(LddManager *ldd, LddNode* f, int var);
 
   LddNode **Ldd_SplitBoxTheory(LddManager *m, LddNode* f, lincons_t cons);
 
