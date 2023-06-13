@@ -2,6 +2,8 @@ set (LIB Ldd_Ldd Ldd_Tvpi Cudd_Cudd Cudd_St Cudd_Mtr Cudd_Epd Cudd_Util
   ${GMP_LIB} m)
 add_executable (test1 test1.c)
 target_link_libraries (test1 ${LIB})
+add_executable (my_test my_test.c)
+target_link_libraries (my_test ${LIB})
 add_executable (test1b test1b.c)
 target_link_libraries (test1b ${LIB})
 add_executable (test2 test2.c)
