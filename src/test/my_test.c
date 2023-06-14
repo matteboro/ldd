@@ -102,13 +102,20 @@ void test0() {
 
   fprintf(stdout, "\nldd and implementation:\n\n");
 
-  LddNode* cons_node = Ldd_FromCons(ldd, CONS(x1,4,1));
+  LddNode* cons_node1 = Ldd_FromCons(ldd, CONS(x1,4,1));
+  LddNode* cons_node2 = Ldd_FromCons(ldd, CONS(x1,4,7));
 
-  LddNode* pos_ldd = Ldd_And(ldd, x1_leq_4, cons_node);
-  LddNode* neg_ldd = Ldd_And(ldd, x1_leq_4, Ldd_Not(cons_node));
+  LddNode* pos_ldd1 = Ldd_And(ldd, x1_leq_4, cons_node1);
+  LddNode* neg_ldd1 = Ldd_And(ldd, x1_leq_4, Cudd_Not(cons_node1));
+  // LddNode* pos_ldd2 = Ldd_And(ldd, Cudd_Not(x1_leq_4), cons_node1);
+  // LddNode* neg_ldd2 = Ldd_And(ldd, Cudd_Not(x1_leq_4), Cudd_Not(cons_node1));
+  // LddNode* neg_ldd = Ldd_And(ldd, x1_leq_4, Ldd_Not(cons_node));
 
-  Ldd_DumpDotVerbose(ldd, pos_ldd, stdout);
-  Ldd_DumpDotVerbose(ldd, neg_ldd, stdout);
+  Ldd_DumpDotVerbose(ldd, pos_ldd1, stdout);
+  Ldd_DumpDotVerbose(ldd, neg_ldd1, stdout);
+  // Ldd_DumpDotVerbose(ldd, pos_ldd2, stdout);
+  // Ldd_DumpDotVerbose(ldd, neg_ldd2, stdout);
+  //Ldd_DumpDotVerbose(ldd, neg_ldd, stdout);
 
 /*
 

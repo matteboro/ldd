@@ -783,7 +783,7 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
   LddNode *t = Ldd_T(f);
   LddNode *e = Ldd_E(f);
   LddNode *cons_node = Ldd_FromCons(ldd, (lincons_t)cons);
-  LddNode *tmp_then, tmp_else;
+  LddNode *tmp_then, *tmp_else;
 
   pair_LddNode_t result = new_pair_LddNode();
   Split_action_t action = Split_ChooseAction(ldd, f, cons);
@@ -810,27 +810,21 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
     break;
   case SUBS_THEN:
     if (node_comp) {
-      result.pos = t == one ? one : lddUniqueInter(ldd, cons_index, t, one);
-      result.pos = Cudd_Not(result.pos);
-
-      tmp_then = t == one ? one : lddUniqueInter(ldd, cons_index, one, t);
-      result.neg = lddUniqueInter(ldd, f_index, tmp_then, e);
-      result.neg = Cudd_Not(result.neg);
+      result.pos = lddUniqueInter(ldd, cons_index, t, one);
+      result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
     } else {
-      result.pos = lddUniqueInter(ldd, cons_index, t, zero);
-
-      tmp_then = lddUniqueInter(ldd, cons_index, one, Cudd_Not(t));
-      result.neg = lddUniqueInter(ldd, f_index, tmp_then, Cudd_Not(e));
+      result.pos = lddUniqueInter(ldd, cons_index, t, one);
+      result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(Cudd_Regular(f)));
       result.neg = Cudd_Not(result.neg);
     }
     if (complement) {
       result.pos = Cudd_Not(result.pos);
       result.neg = Cudd_Not(result.neg);
     }
-    fprintf(stdout, "positive ldd:\n");
-    Ldd_DumpDotVerbose(ldd, result.pos, stdout);
-    fprintf(stdout, "negative ldd:\n");
-    Ldd_DumpDotVerbose(ldd, result.neg, stdout);
+    // fprintf(stdout, "positive ldd:\n");
+    // Ldd_DumpDotVerbose(ldd, result.pos, stdout);
+    // fprintf(stdout, "negative ldd:\n");
+    // Ldd_DumpDotVerbose(ldd, result.neg, stdout);
     return result;
   break;
   case SUBS_ELSE:
@@ -968,6 +962,15 @@ bool Ldd_AtLeastOneOnlyThenChild(LddManager *ldd, LddNode* f, int var) {
   return Ldd_AtLeastOneOnlyThenChild(ldd, Cudd_T(f), var) || Ldd_AtLeastOneOnlyThenChild(ldd, Cudd_E(f), var);
 }
 
+bool Ldd_AtLeastNonComplementedElseEdge(LddManager *ldd, LddNode* f) {
+  if (Cudd_IsConstant(f))
+    return False;
+
+  if (!Cudd_IsComplement(Cudd_E(f)) && !Cudd_IsConstant(Cudd_E(f))) {
+    return True;
+  }
+  return Ldd_AtLeastNonComplementedElseEdge(ldd, Cudd_T(f)) || Ldd_AtLeastNonComplementedElseEdge(ldd, Cudd_E(f));
+}
 
 static tvpi_cst_t 
 new_cst ()
