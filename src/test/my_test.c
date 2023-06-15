@@ -120,11 +120,26 @@ void test0() {
 
   /* 4: x1 <= 4 */
 
-  LddNode *x1_leq_4 = Ldd_FromCons (ldd, CONS (x1,4,4));
-  Ldd_Ref(x1_leq_4);
+  LddNode *x2_leq_4 = Ldd_FromCons (ldd, CONS (x2,4,4));
+  Ldd_Ref(x2_leq_4);
 
-  compare_ldd_and_split(ldd, x1_leq_4, CONS(x1,4,7));
 
+  LddNode *x1_leq_5 = Ldd_FromCons(ldd, CONS(x1,4,5));
+  Ldd_Ref(x1_leq_5);
+
+
+  LddNode *tmp_then = Ldd_And(ldd, x1_leq_5, x2_leq_4);
+  Ldd_Ref(tmp_then);
+
+  LddNode *tmp_else = Ldd_And(ldd, Cudd_Not(x1_leq_5), Cudd_Not(x2_leq_4));
+  Ldd_Ref(tmp_else);
+
+  r1 = Ldd_Or(ldd, tmp_then, tmp_else);
+  Ldd_Ref(r1);
+
+  Ldd_IsOrderedAscendingByVariable(ldd, r1) ? fprintf(stdout, "True\n") : fprintf(stdout, "False\n");
+
+  compare_ldd_and_split(ldd, r1, CONS(x2,4,1));
 
 /*
   DdNode **ddnodearray = (DdNode**)malloc(sizeof(DdNode*)); // initialize the function array

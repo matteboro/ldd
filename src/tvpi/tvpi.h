@@ -40,6 +40,8 @@ extern "C" {
   bool Ldd_AtLeastOneOnlyThenChild(LddManager *ldd, LddNode* f, int var);
   bool Ldd_AtLeastOneOnlyElseChild(LddManager *ldd, LddNode* f, int var);
   bool Ldd_AtLeastNonComplementedElseEdge(LddManager *ldd, LddNode* f);
+  bool Ldd_IsOrderedAscendingByVariable(LddManager *ldd, LddNode* f);
+  bool Ldd_IsOrderedAscendingByLevel(LddManager *ldd, LddNode* f);
 
 
   LddNode **Ldd_SplitBoxTheory(LddManager *m, LddNode* f, lincons_t cons);

@@ -318,6 +318,7 @@ int Ldd_DumpDotVerboseRecur( LddManager * ldd , int idx, LddNode *f ,FILE * fp )
   fprintf(fp, "<<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\"> ");
   fprintf(fp, "<TR><TD> index </TD><TD> %d </TD></TR>", F->index);
   fprintf(fp, "<TR><TD> refs </TD><TD> %d </TD></TR>", F->ref);
+  fprintf(fp, "<TR><TD> level </TD><TD> %d </TD></TR>", CUDD->perm[F->index]);
   fprintf(fp, "<TR><TD> cons </TD><TD>");
 
   dump_html_boxtheory_tvpi_cons((tvpi_cons_t)Ldd_GetCons(ldd, f), fp);
@@ -582,6 +583,8 @@ void Ldd_DumpBoxTheoryMap(FILE *fp, LddManager *m) {
   }
 }
 
+
+
 /////////////////    SPLIT    /////////////////
 
 #define UNREACHABLE(error) fprintf(stdout, "UNREACHABLE in function %s: %s \n", __FUNCTION__, error); exit(1);
@@ -811,10 +814,11 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
     break;
   case SUBS_THEN:
     if (node_comp) {
-      result.pos = lddUniqueInter(ldd, cons_index, t, one);
+      result.pos = lddUniqueInter(ldd, cons_index, t, zero);
       result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
+      result.neg = Cudd_Not(result.neg);
     } else {
-      result.pos = lddUniqueInter(ldd, cons_index, t, one);
+      result.pos = lddUniqueInter(ldd, cons_index, t, zero);
       result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(Cudd_Regular(f)));
       result.neg = Cudd_Not(result.neg);
     }
@@ -880,6 +884,10 @@ pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, tvpi_cons_t 
   if (node_var(ldd, f) == cons_var(cons)) {
     return Split_PlaceConstraint(ldd, f, cons, complement);
   }
+
+  //  if (node_level(cons) > node_level(cons_node)) {
+  //     return Split_InsertConstraint(ldd, f, cons_node, complement);
+  //  }
 
   if (node_var(ldd, f) > cons_var(cons)) {
     return Split_InsertConstraint(ldd, f, cons, complement);
@@ -1004,6 +1012,64 @@ bool Ldd_AtLeastNonComplementedElseEdge(LddManager *ldd, LddNode* f) {
   }
   return Ldd_AtLeastNonComplementedElseEdge(ldd, Cudd_T(f)) || Ldd_AtLeastNonComplementedElseEdge(ldd, Cudd_E(f));
 }
+
+bool Ldd_IsOrderedAscendingByVariable(LddManager *ldd, LddNode* f) {
+
+  if (Cudd_IsConstant(f))
+    return True;
+
+  int my_var = node_var(ldd, f);
+
+  bool then_order = False;
+  bool else_order = False;
+
+  if (Cudd_IsConstant(Cudd_T(f)))
+    then_order = True;
+  else
+    then_order = node_var(ldd, Cudd_T(f)) >= my_var;
+
+  
+  if (Cudd_IsConstant(Cudd_E(f)))
+    else_order = True;
+  else
+    else_order = node_var(ldd, Cudd_E(f)) >= my_var;
+
+  return  else_order && 
+          then_order && 
+          Ldd_IsOrderedAscendingByVariable(ldd, Cudd_T(f)) && 
+          Ldd_IsOrderedAscendingByVariable(ldd, Cudd_E(f));
+}
+
+bool Ldd_IsOrderedAscendingByLevel(LddManager *ldd, LddNode* f) {
+
+  if (Cudd_IsConstant(f))
+    return True;
+
+  int my_lev = CUDD->perm[Cudd_Regular(f)->index];
+
+  LddNode *T = Cudd_Regular(Cudd_T(f));
+  LddNode *E = Cudd_Regular(Cudd_E(f));
+
+  bool then_order = False;
+  bool else_order = False;
+
+  if (Cudd_IsConstant(T))
+    then_order = True;
+  else
+    then_order = CUDD->perm[T->index] >= my_lev;
+
+  
+  if (Cudd_IsConstant(E))
+    else_order = True;
+  else
+    else_order = CUDD->perm[E->index] >= my_lev;
+
+  return  else_order && 
+          then_order && 
+          Ldd_IsOrderedAscendingByLevel(ldd, T) && 
+          Ldd_IsOrderedAscendingByLevel(ldd, E);
+}
+
 
 static tvpi_cst_t 
 new_cst ()
