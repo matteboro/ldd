@@ -784,6 +784,7 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
   LddNode *e = Ldd_E(f);
   LddNode *cons_node = Ldd_FromCons(ldd, (lincons_t)cons);
   LddNode *tmp_then, *tmp_else;
+  bool else_is_complement = Cudd_IsComplement(e);
 
   pair_LddNode_t result = new_pair_LddNode();
   Split_action_t action = Split_ChooseAction(ldd, f, cons);
@@ -828,6 +829,38 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
     return result;
   break;
   case SUBS_ELSE:
+    if (node_comp) {   // node_comp = True
+      if (e == one) {  // else_child = False
+        result.pos = lddUniqueInter(ldd, f_index, t, one);
+        result.pos = Cudd_Not(result.pos);
+
+        result.neg = zero;
+      } else {         // else_child = A
+        tmp_else = lddUniqueInter(ldd, cons_index, Cudd_Regular(e), else_is_complement ? zero : one);
+        result.pos = lddUniqueInter(ldd, f_index, t, Cudd_NotCond(tmp_else, else_is_complement));
+        result.pos = Cudd_Not(result.pos);
+
+        result.neg = lddUniqueInter(ldd, cons_index, one, e);
+        result.neg = Cudd_Not(result.neg);
+      }
+    } else {           // node_comp = False
+      if (e == zero) {  // else_child = False
+        result.pos = lddUniqueInter(ldd, f_index, t, zero);
+
+        result.neg = zero;
+      } else {         // else_child = A
+        tmp_else = lddUniqueInter(ldd, cons_index, Cudd_Regular(e), else_is_complement ? one : zero);
+        result.pos = lddUniqueInter(ldd, f_index, t, Cudd_NotCond(tmp_else, else_is_complement));
+
+        result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(e));
+        result.neg = Cudd_Not(result.neg);
+      }
+    }
+    if (complement) {
+      result.pos = Cudd_Not(result.pos);
+      result.neg = Cudd_Not(result.neg);
+    }
+    return result;
   break;
   default:
     fprintf(stdout, "TODO in Split_PlaceConstraint\n");

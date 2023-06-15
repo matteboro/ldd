@@ -28,6 +28,44 @@ void and_accum (LddNode **r, LddNode *n)
   *r = tmp;
 }
 
+void write_ldd_to_file(LddManager* ldd, LddNode* f, const char *filename){
+    FILE *outfile; 
+    outfile = fopen(filename,"w");
+    Ldd_DumpDot(ldd, f,  outfile);
+    fclose (outfile); 
+}
+
+void compare_ldd_and_split(LddManager* ldd, LddNode* f, lincons_t cons) {
+
+  const char fn_starter[100] = "./split_compare_output/starter.dot";
+  const char fn_split_pos[100] = "./split_compare_output/split_pos.dot";
+  const char fn_split_neg[100] = "./split_compare_output/split_neg.dot";
+  const char fn_and_pos[100] = "./split_compare_output/and_pos.dot";
+  const char fn_and_neg[100] = "./split_compare_output/and_neg.dot";
+  
+  write_ldd_to_file(ldd, f, fn_starter);
+
+  // MY_SPLIT_IMPL
+
+  LddNode** nodes = Ldd_SplitBoxTheory(ldd, f, cons);
+
+  write_ldd_to_file(ldd, nodes[0], fn_split_pos);
+  write_ldd_to_file(ldd, nodes[1], fn_split_neg);
+
+  free(nodes);
+
+  // LDD_AND_SPLIT
+
+  LddNode* cons_node = Ldd_FromCons(ldd, cons);
+  Ldd_Ref(cons_node);
+
+  LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
+  LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
+
+  write_ldd_to_file(ldd, pos_ldd, fn_and_pos);
+  write_ldd_to_file(ldd, neg_ldd, fn_and_neg);
+}
+
 void test0() {
   DdManager *cudd;
 
@@ -85,42 +123,8 @@ void test0() {
   LddNode *x1_leq_4 = Ldd_FromCons (ldd, CONS (x1,4,4));
   Ldd_Ref(x1_leq_4);
 
-  Ldd_DumpDotVerbose(ldd, x1_leq_4, stdout);
+  compare_ldd_and_split(ldd, x1_leq_4, CONS(x1,4,7));
 
-  // MY_SPLIT_IMPL
-
-  fprintf(stdout, "my split implementation:\n\n");
-
-  LddNode** nodes2 = Ldd_SplitBoxTheory(ldd, x1_leq_4, CONS(x1,4,1));
-
-  Ldd_DumpDotVerbose(ldd, nodes2[0], stdout);
-  Ldd_DumpDotVerbose(ldd, nodes2[1], stdout);
-
-  free(nodes2);
-
-  // LDD_AND_SPLIT
-
-  fprintf(stdout, "\nldd and implementation:\n\n");
-
-  LddNode* cons_node1 = Ldd_FromCons(ldd, CONS(x1,4,1));
-  LddNode* cons_node2 = Ldd_FromCons(ldd, CONS(x1,4,7));
-
-  LddNode* pos_ldd1 = Ldd_And(ldd, x1_leq_4, cons_node1);
-  LddNode* neg_ldd1 = Ldd_And(ldd, x1_leq_4, Cudd_Not(cons_node1));
-  // LddNode* pos_ldd2 = Ldd_And(ldd, Cudd_Not(x1_leq_4), cons_node1);
-  // LddNode* neg_ldd2 = Ldd_And(ldd, Cudd_Not(x1_leq_4), Cudd_Not(cons_node1));
-  // LddNode* neg_ldd = Ldd_And(ldd, x1_leq_4, Ldd_Not(cons_node));
-
-  Ldd_DumpDotVerbose(ldd, pos_ldd1, stdout);
-  Ldd_DumpDotVerbose(ldd, neg_ldd1, stdout);
-  // Ldd_DumpDotVerbose(ldd, pos_ldd2, stdout);
-  // Ldd_DumpDotVerbose(ldd, neg_ldd2, stdout);
-  //Ldd_DumpDotVerbose(ldd, neg_ldd, stdout);
-
-/*
-
-
-*/
 
 /*
   DdNode **ddnodearray = (DdNode**)malloc(sizeof(DdNode*)); // initialize the function array
