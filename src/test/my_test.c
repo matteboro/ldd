@@ -28,14 +28,18 @@ void and_accum (LddNode **r, LddNode *n)
   *r = tmp;
 }
 
-void write_ldd_to_file(LddManager* ldd, LddNode* f, const char *filename){
+void write_ldd_to_file(LddManager* ldd, LddNode* f, const char *filename, bool verbose){
     FILE *outfile; 
     outfile = fopen(filename,"w");
-    Ldd_DumpDot(ldd, f,  outfile);
+    if (verbose)
+      Ldd_DumpDotVerbose(ldd, f,  outfile);
+    else
+      Ldd_DumpDot(ldd, f,  outfile);
     fclose (outfile); 
 }
 
-void compare_ldd_and_split(LddManager* ldd, LddNode* f, lincons_t cons) {
+
+void compare_ldd_and_split(LddManager* ldd, LddNode* f, lincons_t cons, bool verbose) {
 
   const char fn_starter[100] = "./split_compare_output/starter.dot";
   const char fn_split_pos[100] = "./split_compare_output/split_pos.dot";
@@ -43,14 +47,14 @@ void compare_ldd_and_split(LddManager* ldd, LddNode* f, lincons_t cons) {
   const char fn_and_pos[100] = "./split_compare_output/and_pos.dot";
   const char fn_and_neg[100] = "./split_compare_output/and_neg.dot";
   
-  write_ldd_to_file(ldd, f, fn_starter);
+  write_ldd_to_file(ldd, f, fn_starter, verbose);
 
   // MY_SPLIT_IMPL
 
   LddNode** nodes = Ldd_SplitBoxTheory(ldd, f, cons);
 
-  write_ldd_to_file(ldd, nodes[0], fn_split_pos);
-  write_ldd_to_file(ldd, nodes[1], fn_split_neg);
+  write_ldd_to_file(ldd, nodes[0], fn_split_pos, verbose);
+  write_ldd_to_file(ldd, nodes[1], fn_split_neg, verbose);
 
   free(nodes);
 
@@ -62,9 +66,12 @@ void compare_ldd_and_split(LddManager* ldd, LddNode* f, lincons_t cons) {
   LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
   LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
 
-  write_ldd_to_file(ldd, pos_ldd, fn_and_pos);
-  write_ldd_to_file(ldd, neg_ldd, fn_and_neg);
+  write_ldd_to_file(ldd, pos_ldd, fn_and_pos, verbose);
+  write_ldd_to_file(ldd, neg_ldd, fn_and_neg, verbose);
 }
+
+#define False 0
+#define True 1
 
 void test0() {
   DdManager *cudd;
@@ -120,12 +127,14 @@ void test0() {
 
   /* 4: x1 <= 4 */
 
+  LddNode *x1_leq_5 = Ldd_FromCons(ldd, CONS(x1,4,5));
+  Ldd_Ref(x1_leq_5);
+
   LddNode *x2_leq_4 = Ldd_FromCons (ldd, CONS (x2,4,4));
   Ldd_Ref(x2_leq_4);
 
 
-  LddNode *x1_leq_5 = Ldd_FromCons(ldd, CONS(x1,4,5));
-  Ldd_Ref(x1_leq_5);
+
 
 
   LddNode *tmp_then = Ldd_And(ldd, x1_leq_5, x2_leq_4);
@@ -139,7 +148,7 @@ void test0() {
 
   Ldd_IsOrderedAscendingByVariable(ldd, r1) ? fprintf(stdout, "True\n") : fprintf(stdout, "False\n");
 
-  compare_ldd_and_split(ldd, r1, CONS(x2,4,1));
+  compare_ldd_and_split(ldd, r1, CONS(x2,4,1), True);
 
 /*
   DdNode **ddnodearray = (DdNode**)malloc(sizeof(DdNode*)); // initialize the function array

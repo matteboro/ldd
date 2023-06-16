@@ -634,9 +634,11 @@ tvpi_cst_t node_cst(LddManager *ldd, LddNode *n) {
   return cons->cst;
 }
 
-pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t cons, bool complement) {
+pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
 
-  LddNode* cons_ldd = Ldd_FromCons(ldd, cons);
+  // NOTE: increment refs count??
+
+  LddNode* cons_ldd = cons;
   int cons_index = cons_ldd->index;
   pair_LddNode_t result = new_pair_LddNode();
   LddNode *one =  DD_ONE(CUDD);
@@ -664,7 +666,7 @@ pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t c
 
 // added comment lol
 
-pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, tvpi_cons_t cons, bool complement) {
+pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
   
   pair_LddNode_t result = new_pair_LddNode();
   LddNode *one =  DD_ONE(CUDD);
@@ -675,14 +677,14 @@ pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, tvpi_cons_
       result.pos = one;
       result.neg = one;
     } else if (f == zero){
-      result.neg = Ldd_FromCons(ldd, cons);
+      result.neg = cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
       result.pos = Cudd_Complement(result.neg);
     } else {
       UNREACHABLE("the ldd f passed was constant but is not either one or zero");
     }
   } else {
     if (f == one) {
-      result.pos = Ldd_FromCons(ldd, cons);
+      result.pos =  cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
       result.neg = Cudd_Complement(result.pos);
     } else if (f == zero){
       result.pos = zero;
@@ -750,10 +752,10 @@ bool tvpi_cst_eq(tvpi_cst_t left, tvpi_cst_t right) {
   return i == 0;
 }
 
-Split_action_t  Split_ChooseAction(LddManager *ldd, LddNode* f, tvpi_cons_t cons) {
+Split_action_t  Split_ChooseAction(LddManager *ldd, LddNode* f, LddNode* cons) {
 
   tvpi_cst_t f_cst = node_cst(ldd, f);
-  tvpi_cst_t cons_cst = cons->cst;
+  tvpi_cst_t cons_cst = node_cst(ldd, cons); // cons->cst;
 
   if (Split_NoChildrenHaveSameVariable(ldd, f)) {
 
@@ -775,17 +777,16 @@ Split_action_t  Split_ChooseAction(LddManager *ldd, LddNode* f, tvpi_cons_t cons
   } else {
     UNREACHABLE("impossible children combination");
   }
-
 }
 
-pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t cons, bool complement) {
+pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
   assert(node_var(ldd, f) == cons_var(cons));
 
   LddNode *one =  DD_ONE(CUDD);
   LddNode *zero = Ldd_Not(one);
   LddNode *t = Ldd_T(f);
   LddNode *e = Ldd_E(f);
-  LddNode *cons_node = Ldd_FromCons(ldd, (lincons_t)cons);
+  LddNode *cons_node = cons; // Ldd_FromCons(ldd, (lincons_t)cons);
   LddNode *tmp_then, *tmp_else;
   bool else_is_complement = Cudd_IsComplement(e);
 
@@ -814,7 +815,7 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
     break;
   case SUBS_THEN:
     if (node_comp) {
-      result.pos = lddUniqueInter(ldd, cons_index, t, zero);
+      result.pos = t == one && e == zero ? zero : lddUniqueInter(ldd, cons_index, t, zero);
       result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
       result.neg = Cudd_Not(result.neg);
     } else {
@@ -875,22 +876,26 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, tvpi_cons_t co
   UNREACHABLE("impossible action");
 } 
 
-pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, tvpi_cons_t cons, bool complement) {
+int node_level(LddManager *ldd, LddNode* f) {
+  return CUDD->perm[(Cudd_Regular(f)->index)];
+}
+
+pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
 
   if (Cudd_IsConstant(f)) {
     return Split_HandleConstantCases(ldd, f, cons, complement);
   }
 
-  if (node_var(ldd, f) == cons_var(cons)) {
+  // if (node_var(ldd, f) == cons_var(cons)) {
+  //   return Split_PlaceConstraint(ldd, f, cons, complement);
+  // }
+
+  if (node_var(ldd, f) == node_var(ldd, cons)) {
     return Split_PlaceConstraint(ldd, f, cons, complement);
   }
 
-  //  if (node_level(cons) > node_level(cons_node)) {
-  //     return Split_InsertConstraint(ldd, f, cons_node, complement);
-  //  }
-
-  if (node_var(ldd, f) > cons_var(cons)) {
-    return Split_InsertConstraint(ldd, f, cons, complement);
+  if (node_level(ldd, f) > node_level(ldd, cons)) {
+       return Split_InsertConstraint(ldd, f, cons, complement);
   }
 
   if (Cudd_IsComplement(f))
@@ -905,6 +910,7 @@ pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, tvpi_cons_t 
   // here we check if we have to propagate the negation up the tree (i.e if the then edge is complemented)
 
   if (else_pair.pos == then_pair.pos) { 
+    fprintf(stdout, "inside if (else_pair.pos == then_pair.pos)\n");
     result.pos = else_pair.pos;
   } else if (Cudd_IsComplement(then_pair.pos)) {
     result.pos = lddUniqueInter(ldd, index, Cudd_Not(then_pair.pos), Cudd_Not(else_pair.pos));
@@ -938,14 +944,15 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
   assert(tvpi_cons->op == LEQ);
 
   pair_LddNode_t result = new_pair_LddNode();
+  LddNode *cons_node = Ldd_FromCons(ldd, cons);
   
   // here we handle top and bottom cases (the ldd f passed is constant: either 0 or 1)
   if (Cudd_IsConstant(f)) {
-    result = Split_HandleConstantCases(ldd, f, tvpi_cons, False);
+    result = Split_HandleConstantCases(ldd, f, cons_node, False);
   } 
   // here we handle the cases where the ldd is not constant 
   else {   
-    result = Ldd_SplitBoxTheoryRecur(ldd, f, tvpi_cons, False);
+    result = Ldd_SplitBoxTheoryRecur(ldd, f, cons_node, False);
   }
 
   if (complement)
