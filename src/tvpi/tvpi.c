@@ -1,5 +1,6 @@
 #include "tvpiInt.h"
 #include <assert.h>
+#include <string.h>
 
 #ifdef OCT_DEBUG 
 #include "tdd-octInt.h" /* enable for debugging */
@@ -270,6 +271,31 @@ void Ldd_DumpDot( LddManager * ldd , LddNode *f , FILE * fp ) {
 
   fprintf(fp, "}\n");
 }
+
+void Ldd_DumpDotWithCons(LddManager * ldd , LddNode *f, lincons_t cons, FILE * fp ) {
+
+  fprintf(fp,"digraph LDD {\n");
+
+  fprintf(fp, "start [label=F, shape=square];\n");
+  fprintf(fp, "node1 [label=1, shape=square];\n"); 
+  
+  fprintf(fp, "cons [label=\"");
+  theory_t *t = Ldd_GetTheory(ldd);
+  t->print_lincons(fp, cons);
+  fprintf(fp, "\", shape=square];\n");
+
+  idx_counter = 2;
+
+  int next_idx = Ldd_DumpDotRecur(ldd, 2, Ldd_Regular(f), fp);
+
+  if (Cudd_IsComplement(f))
+    fprintf(fp, "start -> node%d [style=dotted];\n", next_idx);
+  else
+    fprintf(fp, "start -> node%d [style=solid];\n", next_idx);
+
+  fprintf(fp, "}\n");
+}
+
 
 void dump_html_boxtheory_tvpi_cons(tvpi_cons_t cons, FILE *fp) {
 
@@ -598,10 +624,7 @@ typedef enum {
   SUBS,
   SUBS_THEN,
   SUBS_ELSE,
-  RECUR_THEN,
   RECUR_ELSE,
-  THEN_SPEC,
-  THEN_SPEC_OVERLAP
 } Split_action_t;
 
 void pair_LddNode_switch(pair_LddNode_t *pair){
@@ -650,7 +673,6 @@ pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, LddNode* cons
     result.pos = Cudd_Complement(result.pos);
 
   // negative
-
   if (complement) {
     result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
     if (Cudd_IsComplement(f))
@@ -770,10 +792,19 @@ Split_action_t  Split_ChooseAction(LddManager *ldd, LddNode* f, LddNode* cons) {
 
   } else if (Split_OnlyElseChildHasSameVariable(ldd, f)) {
 
+      if (tvpi_cst_le(cons_cst, f_cst))
+        return SUBS_THEN;
+      else if (tvpi_cst_eq(cons_cst, f_cst))
+        return SUBS;
+      else if (tvpi_cst_ge(cons_cst, f_cst))
+        return RECUR_ELSE;
+      else 
+        UNREACHABLE(" in case Split_NoChildrenHaveSameVariable impossible constant comparison");
+
   } else if (Split_OnlyThenChildHasSameVariable(ldd, f)) {
-
+    UNREACHABLE("in case Split_OnlyThenChildHasSameVariable");
   } else if (Split_BothChildrenHaveSameVariable(ldd, f)) {
-
+    UNREACHABLE("in case Split_BothChildrenHaveSameVariable");
   } else {
     UNREACHABLE("impossible children combination");
   }
@@ -799,25 +830,47 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
 
   switch(action) {
   case SUBS:
-    if (node_comp) {
-      result.pos = t == one ? one : lddUniqueInter(ldd, f_index, t, one);
-      result.neg = e == one ? one : lddUniqueInter(ldd, f_index, one, e);
+
+    if (t == one) {
+      if (node_comp) {
+        result.pos = one;
+        result.neg = lddUniqueInter(ldd, f_index, one, e);
+      } else {
+        result.pos = zero;
+        result.neg = lddUniqueInter(ldd, f_index, one, Cudd_Not(e));
+      }
+      if (!complement) {
+        result.pos = 
+        result.neg = Cudd_Not(result.neg);
+      }
     } else {
-      result.pos = lddUniqueInter(ldd, f_index, t, zero);
-      result.neg = e == zero ? one  : lddUniqueInter(ldd, f_index, one, Cudd_Not(e));
-      result.neg = Cudd_Not(result.neg);
+      if (node_comp) {
+        result.pos = lddUniqueInter(ldd, f_index, t, one);
+        result.neg = lddUniqueInter(ldd, f_index, one, e);
+      } else {
+        result.pos = lddUniqueInter(ldd, f_index, t, zero);
+        result.pos = Cudd_Not(result.pos);
+        result.neg = lddUniqueInter(ldd, f_index, one, Cudd_Not(e));
+      }
+      if (!complement) {
+        result.pos = Cudd_Not(result.pos);
+        result.neg = Cudd_Not(result.neg);
+      }
     }
-    if (complement) {
-      result.pos = Cudd_Not(result.pos);
-      result.neg = Cudd_Not(result.neg);
-    }
+    // Ldd_DumpDot(ldd, result.neg, stdout);
+    // Ldd_DumpDot(ldd, result.pos, stdout);
     return result;
     break;
   case SUBS_THEN:
     if (node_comp) {
-      result.pos = t == one && e == zero ? zero : lddUniqueInter(ldd, cons_index, t, zero);
-      result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
-      result.neg = Cudd_Not(result.neg);
+      result.pos = t == one ? one : lddUniqueInter(ldd, cons_index, t, one);
+      result.pos = Cudd_Not(result.pos);
+      if (t == one) 
+        result.neg = f;
+      else {
+        result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
+        result.neg = Cudd_Not(result.neg);
+      }
     } else {
       result.pos = lddUniqueInter(ldd, cons_index, t, zero);
       result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(Cudd_Regular(f)));
@@ -827,10 +880,6 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
       result.pos = Cudd_Not(result.pos);
       result.neg = Cudd_Not(result.neg);
     }
-    // fprintf(stdout, "positive ldd:\n");
-    // Ldd_DumpDotVerbose(ldd, result.pos, stdout);
-    // fprintf(stdout, "negative ldd:\n");
-    // Ldd_DumpDotVerbose(ldd, result.neg, stdout);
     return result;
   break;
   case SUBS_ELSE:
@@ -848,7 +897,7 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
         result.neg = lddUniqueInter(ldd, cons_index, one, e);
         result.neg = Cudd_Not(result.neg);
       }
-    } else {           // node_comp = False
+    } else {            // node_comp = False
       if (e == zero) {  // else_child = False
         result.pos = lddUniqueInter(ldd, f_index, t, zero);
 
@@ -865,6 +914,34 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
       result.pos = Cudd_Not(result.pos);
       result.neg = Cudd_Not(result.neg);
     }
+    return result;
+  break;
+  case RECUR_ELSE:
+    // code
+
+    // LddNode *recur_e = e;
+
+    // if (Cudd_IsComplement(f))
+    //   complement = !complement;
+
+
+    // while(action = Split_ChooseAction(ldd, recur_e, cons) == RECUR_ELSE) {
+    //   recur_e = Cudd_E(recur_e);
+    //   if (Cudd_IsComplement(recur_e))
+    //     complement = !complement;
+    // }
+
+    // pair_LddNode_t tmp_result = Split_PlaceConstraint(ldd, recur_e, cons, complement);
+
+
+    if (Cudd_IsComplement(f))
+      complement = !complement;
+
+    pair_LddNode_t tmp_result = Split_PlaceConstraint(ldd, e, cons, complement);
+
+    result.pos = Cudd_NotCond(lddUniqueInter(ldd, f_index, t, tmp_result.pos),  Cudd_IsComplement(f));
+    result.neg = Cudd_NotCond(tmp_result.neg, Cudd_IsComplement(f));
+
     return result;
   break;
   default:
@@ -895,7 +972,7 @@ pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* con
   }
 
   if (node_level(ldd, f) > node_level(ldd, cons)) {
-       return Split_InsertConstraint(ldd, f, cons, complement);
+    return Split_InsertConstraint(ldd, f, cons, complement);
   }
 
   if (Cudd_IsComplement(f))
@@ -910,7 +987,7 @@ pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* con
   // here we check if we have to propagate the negation up the tree (i.e if the then edge is complemented)
 
   if (else_pair.pos == then_pair.pos) { 
-    fprintf(stdout, "inside if (else_pair.pos == then_pair.pos)\n");
+    // fprintf(stdout, "inside if (else_pair.pos == then_pair.pos)\n");
     result.pos = else_pair.pos;
   } else if (Cudd_IsComplement(then_pair.pos)) {
     result.pos = lddUniqueInter(ldd, index, Cudd_Not(then_pair.pos), Cudd_Not(else_pair.pos));
@@ -926,6 +1003,11 @@ pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* con
     result.neg = Cudd_Not(result.neg);
   } else {
     result.neg = lddUniqueInter(ldd, index, then_pair.neg, else_pair.neg);
+  }
+
+  if (Cudd_IsComplement(f)) {
+    result.pos = Cudd_Not(result.pos);
+    result.neg = Cudd_Not(result.neg);
   }
 
   return result;
@@ -964,6 +1046,110 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
   nodes[1] = result.neg;
 
   return nodes;
+}
+
+bool Ldd_SplitTest(LddManager *ldd, LddNode* f, LddNode* node_cons) {
+  lincons_t cons = Ldd_GetCons(ldd, node_cons);
+  bool passed = False;
+  LddNode** nodes = Ldd_SplitBoxTheory(ldd, f, cons);
+  Cudd_Ref(nodes[0]);
+  Cudd_Ref(nodes[1]);
+
+  // LDD_AND_SPLIT
+
+  LddNode* cons_node = Ldd_FromCons(ldd, cons);
+  Ldd_Ref(cons_node);
+
+  LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
+  LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
+
+  Cudd_Ref(pos_ldd);
+  Cudd_Ref(neg_ldd);
+
+  if (nodes[0] == pos_ldd  && nodes[1] == neg_ldd)
+    passed = True;
+
+  free(nodes);
+
+  return passed;
+}
+
+void _write_ldd_to_file(LddManager* ldd, LddNode* f, const char *filename, bool verbose){
+    FILE *outfile; 
+    outfile = fopen(filename,"w");
+    if (verbose)
+      Ldd_DumpDotVerbose(ldd, f,  outfile);
+    else
+      Ldd_DumpDot(ldd, f,  outfile);
+    fclose (outfile); 
+}
+
+void write_ldd_and_cons_to_file(LddManager* ldd, LddNode* f, lincons_t cons, const char *filename){
+    FILE *outfile; 
+    outfile = fopen(filename,"w");
+    Ldd_DumpDotWithCons(ldd, f, cons, outfile);
+    fclose (outfile); 
+}
+
+
+bool Ldd_SplitTestAndSave(LddManager *ldd, LddNode* f, LddNode* node_cons, const char *dirname) {
+
+  lincons_t cons = Ldd_GetCons(ldd, node_cons);
+  bool passed = False;
+  LddNode** nodes = Ldd_SplitBoxTheory(ldd, f, cons);
+  Cudd_Ref(nodes[0]);
+  Cudd_Ref(nodes[1]);
+
+  // LDD_AND_SPLIT
+
+  LddNode* cons_node = Ldd_FromCons(ldd, cons);
+  Ldd_Ref(cons_node);
+
+  LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
+  LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
+
+  Cudd_Ref(pos_ldd);
+  Cudd_Ref(neg_ldd);
+
+  if (nodes[0] == pos_ldd  && nodes[1] == neg_ldd)
+    passed = True;
+  else {
+    char fn_starter[200];
+    strcpy(fn_starter, dirname);
+    strcat(fn_starter, "before.dot");
+
+    write_ldd_and_cons_to_file(ldd, f, cons, fn_starter);
+  }
+
+
+  if (nodes[0] != pos_ldd) {
+    char fn_split_pos[200];
+    char fn_and_pos[200];
+    strcpy(fn_split_pos, dirname);
+    strcat(fn_split_pos, "pos_split.dot");
+    strcpy(fn_and_pos, dirname);
+    strcat(fn_and_pos, "pos_and.dot");
+    write_ldd_and_cons_to_file(ldd, pos_ldd,  cons, fn_and_pos);
+    write_ldd_and_cons_to_file(ldd, nodes[0], cons, fn_split_pos);
+  }
+
+  if (nodes[1] != neg_ldd) {
+    char fn_split_neg[200];
+    char fn_and_neg[200];
+    strcpy(fn_split_neg, dirname);
+    strcat(fn_split_neg, "neg_split.dot");
+    strcpy(fn_and_neg, dirname);
+    strcat(fn_and_neg, "neg_and.dot");
+    write_ldd_and_cons_to_file(ldd, neg_ldd,  cons, fn_and_neg);
+    write_ldd_and_cons_to_file(ldd, nodes[1], cons, fn_split_neg);
+  }
+
+  Cudd_Deref(pos_ldd);
+  Cudd_Deref(neg_ldd);
+  Cudd_Deref(nodes[0]);
+  Cudd_Deref(nodes[1]);
+  free(nodes);
+  return passed;
 }
 
 ///////////////    END SPLIT    ///////////////

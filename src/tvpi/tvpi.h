@@ -43,6 +43,8 @@ extern "C" {
   bool Ldd_IsOrderedAscendingByVariable(LddManager *ldd, LddNode* f);
   bool Ldd_IsOrderedAscendingByLevel(LddManager *ldd, LddNode* f);
 
+  bool Ldd_SplitTest(LddManager *ldd, LddNode* f, LddNode* cons);
+  bool Ldd_SplitTestAndSave(LddManager *ldd, LddNode* f, LddNode* cons, const char *dirname);
 
   LddNode **Ldd_SplitBoxTheory(LddManager *m, LddNode* f, lincons_t cons);
 
