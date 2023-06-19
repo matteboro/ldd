@@ -661,26 +661,23 @@ pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, LddNode* cons
 
   // NOTE: increment refs count??
 
-  LddNode* cons_ldd = cons;
-  int cons_index = cons_ldd->index;
+  int cons_index = cons->index;
   pair_LddNode_t result = new_pair_LddNode();
   LddNode *one =  DD_ONE(CUDD);
   LddNode *zero = Cudd_Not(one);
+  bool node_comp = Cudd_IsComplement(f) ? !complement : complement;
 
-  // positive
-  result.pos = lddUniqueInter(ldd, cons_index, Cudd_Regular(f), complement ? one : zero);
-  if (Cudd_IsComplement(f))
-    result.pos = Cudd_Complement(result.pos);
-
-  // negative
-  if (complement) {
+  if (node_comp) {
+    result.pos = lddUniqueInter(ldd, cons_index, Cudd_Regular(f), one);
     result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
-    if (Cudd_IsComplement(f))
-      result.neg = Cudd_Complement(result.neg);
   } else {
-    result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(Cudd_Regular(f)));
-    if (!Cudd_IsComplement(f))
-      result.neg = Cudd_Complement(result.neg);
+    result.pos = lddUniqueInter(ldd, cons_index, Cudd_Regular(f), zero);
+    result.pos = Cudd_Not(result.pos);
+    result.neg = lddUniqueInter(ldd, cons_index, Cudd_Complement(f), one);
+  }
+  if (!complement) {
+    result.pos = Cudd_Not(result.pos);
+    result.neg = Cudd_Not(result.neg);
   }
 
   return result;
@@ -700,13 +697,15 @@ pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, LddNode* c
       result.neg = one;
     } else if (f == zero){
       result.neg = cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
+      Cudd_Ref(cons);
       result.pos = Cudd_Complement(result.neg);
     } else {
       UNREACHABLE("the ldd f passed was constant but is not either one or zero");
     }
   } else {
     if (f == one) {
-      result.pos =  cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
+      result.pos = cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
+      Cudd_Ref(cons);
       result.neg = Cudd_Complement(result.pos);
     } else if (f == zero){
       result.pos = zero;
@@ -831,19 +830,63 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
   switch(action) {
   case SUBS:
 
-    if (t == one) {
+    if (e == zero && t == one) {
+      if (node_comp) {
+        result.pos = zero;
+        result.neg = Cudd_Not(Cudd_Regular(f));
+        // Cudd_Ref(f);
+      } else {
+        result.pos = Cudd_Regular(f);
+        // Cudd_Ref(f);
+        result.neg = zero;
+      }
+      if (complement) {
+        result.pos = Cudd_Not(result.pos);
+        result.neg = Cudd_Not(result.neg);
+      }
+    }
+    else if (e == one) {
+      if (node_comp) {
+        result.pos = lddUniqueInter(ldd, f_index, t, one);
+        result.neg = one;
+      } else {
+        result.pos = lddUniqueInter(ldd, f_index, t, zero);
+        result.pos = Cudd_Not(result.pos);
+        result.neg = lddUniqueInter(ldd, f_index, one, zero);
+      }
+      if (!complement) {
+        result.pos = Cudd_Not(result.pos);
+        result.neg = Cudd_Not(result.neg);
+      }
+    } 
+    else if (e == zero) {
+      if (node_comp) {
+        result.pos = lddUniqueInter(ldd, f_index, t, one);
+        result.neg = lddUniqueInter(ldd, f_index, one, zero);
+      } else {
+        result.pos = lddUniqueInter(ldd, f_index, t, zero);
+        result.pos = Cudd_Not(result.pos);
+        result.neg = one;
+      }
+      if (!complement) {
+        result.pos = Cudd_Not(result.pos);
+        result.neg = Cudd_Not(result.neg);
+      }
+    } 
+    else if (t == one) {
       if (node_comp) {
         result.pos = one;
         result.neg = lddUniqueInter(ldd, f_index, one, e);
       } else {
-        result.pos = zero;
+        result.pos = Cudd_Not(lddUniqueInter(ldd, f_index, one, zero));
         result.neg = lddUniqueInter(ldd, f_index, one, Cudd_Not(e));
       }
       if (!complement) {
-        result.pos = 
+        result.pos = Cudd_Not(result.pos);
         result.neg = Cudd_Not(result.neg);
       }
-    } else {
+    } 
+    else {
       if (node_comp) {
         result.pos = lddUniqueInter(ldd, f_index, t, one);
         result.neg = lddUniqueInter(ldd, f_index, one, e);
@@ -862,23 +905,39 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
     return result;
     break;
   case SUBS_THEN:
-    if (node_comp) {
-      result.pos = t == one ? one : lddUniqueInter(ldd, cons_index, t, one);
-      result.pos = Cudd_Not(result.pos);
-      if (t == one) 
-        result.neg = f;
-      else {
-        result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
+
+    if (t == one) {
+      if (node_comp) {
+        result.pos = zero; // ? one : lddUniqueInter(ldd, cons_index, t, one);
+        // result.pos = Cudd_Not(result.pos);
+        result.neg = Cudd_Not(Cudd_Regular(f));
+        Cudd_Ref(f);
+      } else {
+        result.pos = lddUniqueInter(ldd, cons_index, t, zero);
+        result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(Cudd_Regular(f)));
         result.neg = Cudd_Not(result.neg);
       }
-    } else {
-      result.pos = lddUniqueInter(ldd, cons_index, t, zero);
-      result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(Cudd_Regular(f)));
-      result.neg = Cudd_Not(result.neg);
+      if (complement) {
+        result.pos = Cudd_Not(result.pos);
+        result.neg = Cudd_Not(result.neg);
+      }
     }
-    if (complement) {
-      result.pos = Cudd_Not(result.pos);
-      result.neg = Cudd_Not(result.neg);
+    else {
+      if (node_comp) {
+        result.pos = t == one ? one : lddUniqueInter(ldd, cons_index, t, one);
+        result.pos = Cudd_Not(result.pos);
+
+        result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
+        result.neg = Cudd_Not(result.neg);
+      } else {
+        result.pos = lddUniqueInter(ldd, cons_index, t, zero);
+        result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(Cudd_Regular(f)));
+        result.neg = Cudd_Not(result.neg);
+      }
+      if (complement) {
+        result.pos = Cudd_Not(result.pos);
+        result.neg = Cudd_Not(result.neg);
+      }
     }
     return result;
   break;
@@ -917,6 +976,16 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
     return result;
   break;
   case RECUR_ELSE:
+    if (Cudd_IsComplement(f))
+        complement = !complement;
+
+    pair_LddNode_t tmp_result = Split_PlaceConstraint(ldd, e, cons, complement);
+
+    result.pos = Cudd_NotCond(lddUniqueInter(ldd, f_index, t, tmp_result.pos), Cudd_IsComplement(f));
+    result.neg = Cudd_NotCond(tmp_result.neg, Cudd_IsComplement(f));
+
+    return result;
+  /*
     // code
 
     // LddNode *recur_e = e;
@@ -925,24 +994,17 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
     //   complement = !complement;
 
 
-    // while(action = Split_ChooseAction(ldd, recur_e, cons) == RECUR_ELSE) {
-    //   recur_e = Cudd_E(recur_e);
-    //   if (Cudd_IsComplement(recur_e))
-    //     complement = !complement;
-    // }
+    while(action = Split_ChooseAction(ldd, recur_e, cons) == RECUR_ELSE) {
+      recur_e = Cudd_E(recur_e);
+      if (Cudd_IsComplement(recur_e))
+        complement = !complement;
+    }
 
     // pair_LddNode_t tmp_result = Split_PlaceConstraint(ldd, recur_e, cons, complement);
 
 
-    if (Cudd_IsComplement(f))
-      complement = !complement;
+*/
 
-    pair_LddNode_t tmp_result = Split_PlaceConstraint(ldd, e, cons, complement);
-
-    result.pos = Cudd_NotCond(lddUniqueInter(ldd, f_index, t, tmp_result.pos),  Cudd_IsComplement(f));
-    result.neg = Cudd_NotCond(tmp_result.neg, Cudd_IsComplement(f));
-
-    return result;
   break;
   default:
     fprintf(stdout, "TODO in Split_PlaceConstraint\n");
@@ -1068,6 +1130,11 @@ bool Ldd_SplitTest(LddManager *ldd, LddNode* f, LddNode* node_cons) {
 
   if (nodes[0] == pos_ldd  && nodes[1] == neg_ldd)
     passed = True;
+
+  Cudd_IterDerefBdd(CUDD, pos_ldd);
+  Cudd_IterDerefBdd(CUDD, neg_ldd);
+  Cudd_IterDerefBdd(CUDD, nodes[0]);
+  Cudd_IterDerefBdd(CUDD, nodes[1]);
 
   free(nodes);
 
