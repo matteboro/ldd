@@ -30,6 +30,7 @@ void tvpi_print_cst (FILE *f, tvpi_cst_t k);
 #define True 1
 #define False 0
 
+
 typedef struct int_list {
   int val;
   struct int_list *next;
@@ -118,6 +119,28 @@ int get_sign_of_tvpi_constraint(lincons_t cons) {
 op_t get_op_of_tvpi_constraint(lincons_t cons) {
   tvpi_cons_t tvpi_c = (tvpi_cons_t) cons;
   return tvpi_c->op;
+}
+
+int cons_var(tvpi_cons_t cons) {
+  return cons->var[0];
+}
+
+int node_var(LddManager *ldd, LddNode *n) {
+  assert(!Cudd_IsConstant(n));
+  tvpi_cons_t cons = (tvpi_cons_t) lddC(ldd, Cudd_Regular(n)->index);
+  return cons_var(cons);
+}
+
+tvpi_cst_t node_cst(LddManager *ldd, LddNode *n) {
+  assert(!Cudd_IsConstant(n));
+  tvpi_cons_t cons = (tvpi_cons_t) lddC(ldd, Cudd_Regular(n)->index);
+  return cons->cst;
+}
+
+op_t node_op(LddManager *ldd, LddNode *n) {
+  assert(!Cudd_IsConstant(n));
+  tvpi_cons_t cons = (tvpi_cons_t) lddC(ldd, Cudd_Regular(n)->index);
+  return cons->op;
 }
 
 int Ldd_CountMaxConsecutiveVariableBoxTheory(LddManager * ldd , LddNode *f, int var) {
@@ -609,11 +632,44 @@ void Ldd_DumpBoxTheoryMap(FILE *fp, LddManager *m) {
   }
 }
 
+bool Ldd_Equal(LddManager * ldd1 , LddNode *f1, LddManager * ldd2 , LddNode *f2) {
 
+  if (Cudd_IsComplement(f1) != Cudd_IsComplement(f2))
+    return False;
+
+  if (Cudd_IsConstant(f1) && Cudd_IsConstant(f2))
+    return True;
+
+  if (Cudd_IsConstant(f1) || Cudd_IsConstant(f2))
+    return False;
+
+  // both are not constant
+  
+  if (node_var(ldd1, f1) != node_var(ldd2, f2))
+    return False;
+
+  if (!tvpi_cst_eq(node_cst(ldd1, f1), node_cst(ldd2, f2)))
+    return False;
+
+  if (node_op(ldd1, f1) != node_op(ldd2, f2))
+    return False;
+
+  return Ldd_Equal(ldd1, Cudd_T(f1), ldd2, Cudd_T(f2)) && Ldd_Equal(ldd1, Cudd_E(f1), ldd2, Cudd_E(f2));
+}
 
 /////////////////    SPLIT    /////////////////
 
 #define UNREACHABLE(error) fprintf(stdout, "UNREACHABLE in function %s: %s \n", __FUNCTION__, error); exit(1);
+
+void _write_ldd_to_file(LddManager* ldd, LddNode* f, const char *filename, bool verbose){
+    FILE *outfile; 
+    outfile = fopen(filename,"w");
+    if (verbose)
+      Ldd_DumpDotVerbose(ldd, f,  outfile);
+    else
+      Ldd_DumpDot(ldd, f,  outfile);
+    fclose (outfile); 
+}
 
 typedef struct pair_LddNode {
   LddNode *pos;
@@ -641,44 +697,46 @@ pair_LddNode_t new_pair_LddNode() {
   return pair;
 }
 
-int cons_var(tvpi_cons_t cons) {
-  return cons->var[0];
-}
 
-int node_var(LddManager *ldd, LddNode *n) {
-  assert(!Cudd_IsConstant(n));
-  tvpi_cons_t cons = (tvpi_cons_t) lddC(ldd, Cudd_Regular(n)->index);
-  return cons_var(cons);
-}
 
-tvpi_cst_t node_cst(LddManager *ldd, LddNode *n) {
-  assert(!Cudd_IsConstant(n));
-  tvpi_cons_t cons = (tvpi_cons_t) lddC(ldd, Cudd_Regular(n)->index);
-  return cons->cst;
-}
 
-pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
+pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, int index, bool complement) {
 
-  // NOTE: increment refs count??
+  // fprintf(stdout, "about to start insert cobstraint\n");
 
-  int cons_index = cons->index;
+  int cons_index = index;
+  // fprintf(stdout, "extracted index: %d\n", cons_index);
+
   pair_LddNode_t result = new_pair_LddNode();
+  //fprintf(stdout, "created pair result\n");
+
   LddNode *one =  DD_ONE(CUDD);
   LddNode *zero = Cudd_Not(one);
+  //fprintf(stdout, "created ones and zero\n");
+
   bool node_comp = Cudd_IsComplement(f) ? !complement : complement;
 
   if (node_comp) {
+    // fprintf(stdout, "inside node_comp\n");
     result.pos = lddUniqueInter(ldd, cons_index, Cudd_Regular(f), one);
     result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
+    // Ldd_DumpDot(ldd, result.pos, stdout);
+    // Ldd_DumpDot(ldd, result.neg, stdout);
   } else {
+    // fprintf(stdout, "inside !node_comp\n");
     result.pos = lddUniqueInter(ldd, cons_index, Cudd_Regular(f), zero);
     result.pos = Cudd_Not(result.pos);
-    result.neg = lddUniqueInter(ldd, cons_index, Cudd_Complement(f), one);
+    result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Complement(f));
   }
   if (!complement) {
+    // fprintf(stdout, "inside !complement\n");
     result.pos = Cudd_Not(result.pos);
     result.neg = Cudd_Not(result.neg);
   }
+
+  // fprintf(stdout, "finished insert cobstraint with:\n");
+  // Ldd_DumpDot(ldd, result.pos, stdout);
+  // Ldd_DumpDot(ldd, result.neg, stdout);
 
   return result;
 }
@@ -697,7 +755,7 @@ pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, LddNode* c
       result.neg = one;
     } else if (f == zero){
       result.neg = cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
-      Cudd_Ref(cons);
+      // Cudd_Ref(cons);
       result.pos = Cudd_Complement(result.neg);
     } else {
       UNREACHABLE("the ldd f passed was constant but is not either one or zero");
@@ -705,7 +763,7 @@ pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, LddNode* c
   } else {
     if (f == one) {
       result.pos = cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
-      Cudd_Ref(cons);
+      // Cudd_Ref(cons);
       result.neg = Cudd_Complement(result.pos);
     } else if (f == zero){
       result.pos = zero;
@@ -911,7 +969,7 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
         result.pos = zero; // ? one : lddUniqueInter(ldd, cons_index, t, one);
         // result.pos = Cudd_Not(result.pos);
         result.neg = Cudd_Not(Cudd_Regular(f));
-        Cudd_Ref(f);
+        // Cudd_Ref(f);
       } else {
         result.pos = lddUniqueInter(ldd, cons_index, t, zero);
         result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Not(Cudd_Regular(f)));
@@ -1021,6 +1079,9 @@ int node_level(LddManager *ldd, LddNode* f) {
 
 pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
 
+  // fprintf(stdout, "abput to extract index from cons\n");
+  int cons_index = cons->index;
+  // fprintf(stdout, "index extracted from cons: %d\n", cons_index);
   if (Cudd_IsConstant(f)) {
     return Split_HandleConstantCases(ldd, f, cons, complement);
   }
@@ -1034,13 +1095,18 @@ pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* con
   }
 
   if (node_level(ldd, f) > node_level(ldd, cons)) {
-    return Split_InsertConstraint(ldd, f, cons, complement);
+    return Split_InsertConstraint(ldd, f, cons_index, complement);
   }
 
   if (Cudd_IsComplement(f))
     complement = !complement;
 
   pair_LddNode_t result = new_pair_LddNode();
+
+
+  // fprintf(stdout, "about to start recursion on:\n");
+  // Ldd_DumpDot(ldd, Cudd_T(f), stdout);
+  // Ldd_DumpDot(ldd, Cudd_E(f), stdout);
   int index = Cudd_Regular(f)->index;
 
   pair_LddNode_t then_pair = Ldd_SplitBoxTheoryRecur(ldd, Cudd_T(f), cons, complement);
@@ -1088,7 +1154,15 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
   assert(tvpi_cons->op == LEQ);
 
   pair_LddNode_t result = new_pair_LddNode();
+
+  // Ldd_GetTheory(ldd)->print_lincons(stdout, cons);
+
   LddNode *cons_node = Ldd_FromCons(ldd, cons);
+  Cudd_Ref(cons_node);
+  // fprintf(stdout, "\n");
+  // Ldd_DumpDot(ldd, cons_node, stdout);
+
+  //fprintf(stdout, "split about to start\n");
   
   // here we handle top and bottom cases (the ldd f passed is constant: either 0 or 1)
   if (Cudd_IsConstant(f)) {
@@ -1098,6 +1172,8 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
   else {   
     result = Ldd_SplitBoxTheoryRecur(ldd, f, cons_node, False);
   }
+
+  //fprintf(stdout, "split done!!\n");
 
   if (complement)
     pair_LddNode_switch(&result);
@@ -1113,43 +1189,40 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
 bool Ldd_SplitTest(LddManager *ldd, LddNode* f, LddNode* node_cons) {
   lincons_t cons = Ldd_GetCons(ldd, node_cons);
   bool passed = False;
+  FILE *outfile; 
+  outfile = fopen("./debug.txt","a");
+
+  fprintf(outfile, "split\n");
   LddNode** nodes = Ldd_SplitBoxTheory(ldd, f, cons);
   Cudd_Ref(nodes[0]);
   Cudd_Ref(nodes[1]);
 
   // LDD_AND_SPLIT
 
-  LddNode* cons_node = Ldd_FromCons(ldd, cons);
-  Ldd_Ref(cons_node);
+  // fprintf(outfile, "and\n");
+  // LddNode* cons_node = Ldd_FromCons(ldd, cons);
+  // Ldd_Ref(cons_node);
 
-  LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
-  LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
+  // LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
+  // LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
 
-  Cudd_Ref(pos_ldd);
-  Cudd_Ref(neg_ldd);
+  // Cudd_Ref(pos_ldd);
+  // Cudd_Ref(neg_ldd);
 
-  if (nodes[0] == pos_ldd  && nodes[1] == neg_ldd)
-    passed = True;
+  // if (nodes[0] == pos_ldd  && nodes[1] == neg_ldd)
+  //   passed = True;
 
-  Cudd_IterDerefBdd(CUDD, pos_ldd);
-  Cudd_IterDerefBdd(CUDD, neg_ldd);
-  Cudd_IterDerefBdd(CUDD, nodes[0]);
-  Cudd_IterDerefBdd(CUDD, nodes[1]);
+  // Cudd_IterDerefBdd(CUDD, pos_ldd);
+  // Cudd_IterDerefBdd(CUDD, neg_ldd);
+  // Cudd_IterDerefBdd(CUDD, nodes[0]);
+  // Cudd_IterDerefBdd(CUDD, nodes[1]);
 
   free(nodes);
-
+  fclose (outfile); 
   return passed;
 }
 
-void _write_ldd_to_file(LddManager* ldd, LddNode* f, const char *filename, bool verbose){
-    FILE *outfile; 
-    outfile = fopen(filename,"w");
-    if (verbose)
-      Ldd_DumpDotVerbose(ldd, f,  outfile);
-    else
-      Ldd_DumpDot(ldd, f,  outfile);
-    fclose (outfile); 
-}
+
 
 void write_ldd_and_cons_to_file(LddManager* ldd, LddNode* f, lincons_t cons, const char *filename){
     FILE *outfile; 
