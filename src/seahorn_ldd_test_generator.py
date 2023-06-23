@@ -48,6 +48,7 @@ test_func_counter=0
 INTERM_LOOPS = 40
 TEST_LOOPS = 15
 BASIC_LOOPS = 30
+SPLIT_TEST_LOOPS = 10
 
 for f in range(NUM_TEST):
     test_code = f"""
@@ -144,16 +145,19 @@ void test{test_func_counter}() {"{"}
     #test_code += f'  write_ldd_to_file(and_ldd, and_test{test_counter-1}, "./deep_compare/and_ldd_{test_func_counter}.dot", True);\n'
     #test_code += f'  write_ldd_to_file(split_ldd, split_test{test_counter-1}, "./deep_compare/split_ldd_{test_func_counter}.dot", True);\n'
     
-    var = random.randint(1, VAR_NUM-1)
-    cst = random.randint(-20, 20)
-    and_cons = f"lincons_t and_c = AND_CONS(x{var},{VAR_NUM},{cst});\n"
-    split_cons = f"lincons_t split_c = SPLIT_CONS(x{var},{VAR_NUM},{cst});\n"
+    for i in range(SPLIT_TEST_LOOPS):
+
+      var = random.randint(1, VAR_NUM-1)
+      cst = random.randint(-20, 20)
+      and_cons = f"lincons_t and_c = AND_CONS(x{var},{VAR_NUM},{cst});\n"
+      split_cons = f"lincons_t split_c = SPLIT_CONS(x{var},{VAR_NUM},{cst});\n"
     
-    test_code += f"""
-  const char fn_split_pos[100] = "./deep_compare/{test_func_counter}_pos_split.dot";
-  const char fn_split_neg[100] = "./deep_compare/{test_func_counter}_neg_split.dot";
-  const char fn_and_pos[100] = "./deep_compare/{test_func_counter}_pos_and.dot";
-  const char fn_and_neg[100] = "./deep_compare/{test_func_counter}_neg_and.dot";
+      test_code += f"""
+  {"{"}
+  // const char fn_split_pos[100] = "./deep_compare/{test_func_counter}_pos_split.dot";
+  // const char fn_split_neg[100] = "./deep_compare/{test_func_counter}_neg_split.dot";
+  // const char fn_and_pos[100] = "./deep_compare/{test_func_counter}_pos_and.dot";
+  // const char fn_and_neg[100] = "./deep_compare/{test_func_counter}_neg_and.dot";
   
   {and_cons}
   {split_cons}
@@ -165,8 +169,8 @@ void test{test_func_counter}() {"{"}
   Cudd_Ref(nodes[0]);
   Cudd_Ref(nodes[1]);
   
-  write_ldd_to_file(split_ldd, nodes[0], fn_split_pos, True);
-  write_ldd_to_file(split_ldd, nodes[1], fn_split_neg, True);
+  // write_ldd_to_file(split_ldd, nodes[0], fn_split_pos, True);
+  // write_ldd_to_file(split_ldd, nodes[1], fn_split_neg, True);
 
   // LDD_AND_SPLIT
 
@@ -179,25 +183,27 @@ void test{test_func_counter}() {"{"}
   Cudd_Ref(pos_ldd);
   Cudd_Ref(neg_ldd);
   
-  write_ldd_to_file(and_ldd, pos_ldd, fn_and_pos, True);
-  write_ldd_to_file(and_ldd, neg_ldd, fn_and_neg, True);
+  // write_ldd_to_file(and_ldd, pos_ldd, fn_and_pos, True);
+  // write_ldd_to_file(and_ldd, neg_ldd, fn_and_neg, True);
   
   bool pos_passed, neg_passed;
 
   if (!(pos_passed = Ldd_EqualRefLeq(and_ldd, pos_ldd, split_ldd, nodes[0])))
-    fprintf(stdout, "test number {test_func_counter} did not pass on positive result\\n");
+    fprintf(stdout, "test number {test_func_counter}.{i} did not pass on positive result\\n");
 
   if (!(neg_passed = Ldd_EqualRefLeq(and_ldd, neg_ldd, split_ldd, nodes[1])))
-    fprintf(stdout, "test number {test_func_counter} did not pass on negative result\\n");
+    fprintf(stdout, "test number {test_func_counter}.{i} did not pass on negative result\\n");
 
   if (neg_passed && pos_passed)
-    fprintf(stdout, "test number {test_func_counter} passed\\n");
+    fprintf(stdout, "test number {test_func_counter}.{i} passed\\n");
 
   free(nodes);
+  {"}"}
+"""
+
+    test_code += """
   Ldd_Quit(and_ldd);
   Ldd_Quit(split_ldd);
-
-
 """
     test_code += "}\n"
 
