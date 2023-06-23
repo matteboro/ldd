@@ -48,6 +48,9 @@ extern "C" {
 
   LddNode **Ldd_SplitBoxTheory(LddManager *m, LddNode* f, lincons_t cons);
 
+  bool Ldd_Equal(LddManager * ldd1 , LddNode *f1, LddManager * ldd2 , LddNode *f2);
+  bool Ldd_EqualRefLeq(LddManager * ldd1 , LddNode *f1, LddManager * ldd2 , LddNode *f2);
+
 #ifdef __cplusplus
 }
 #endif

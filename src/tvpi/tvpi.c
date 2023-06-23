@@ -654,8 +654,39 @@ bool Ldd_Equal(LddManager * ldd1 , LddNode *f1, LddManager * ldd2 , LddNode *f2)
   if (node_op(ldd1, f1) != node_op(ldd2, f2))
     return False;
 
+  
+
   return Ldd_Equal(ldd1, Cudd_T(f1), ldd2, Cudd_T(f2)) && Ldd_Equal(ldd1, Cudd_E(f1), ldd2, Cudd_E(f2));
 }
+
+bool Ldd_EqualRefLeq(LddManager * ldd1 , LddNode *f1, LddManager * ldd2 , LddNode *f2) {
+
+  if (Cudd_IsComplement(f1) != Cudd_IsComplement(f2))
+    return False;
+
+  if (Cudd_IsConstant(f1) && Cudd_IsConstant(f2))
+    return True;
+
+  if (Cudd_IsConstant(f1) || Cudd_IsConstant(f2))
+    return False;
+
+  // both are not constant
+  
+  if (node_var(ldd1, f1) != node_var(ldd2, f2))
+    return False;
+
+  if (!tvpi_cst_eq(node_cst(ldd1, f1), node_cst(ldd2, f2)))
+    return False;
+
+  if (node_op(ldd1, f1) != node_op(ldd2, f2))
+    return False;
+
+  if (Cudd_Regular(f1)->ref > Cudd_Regular(f2)->ref)
+    return False;
+
+  return Ldd_EqualRefLeq(ldd1, Cudd_T(f1), ldd2, Cudd_T(f2)) && Ldd_EqualRefLeq(ldd1, Cudd_E(f1), ldd2, Cudd_E(f2));
+}
+
 
 /////////////////    SPLIT    /////////////////
 
@@ -1192,37 +1223,37 @@ bool Ldd_SplitTest(LddManager *ldd, LddNode* f, LddNode* node_cons) {
   FILE *outfile; 
   outfile = fopen("./debug.txt","a");
 
-  fprintf(outfile, "split\n");
+  fprintf(outfile, "split... ");
   LddNode** nodes = Ldd_SplitBoxTheory(ldd, f, cons);
   Cudd_Ref(nodes[0]);
   Cudd_Ref(nodes[1]);
+  fprintf(outfile, "done\n");
 
   // LDD_AND_SPLIT
 
-  // fprintf(outfile, "and\n");
-  // LddNode* cons_node = Ldd_FromCons(ldd, cons);
-  // Ldd_Ref(cons_node);
+  fprintf(outfile, "and... ");
+  LddNode* cons_node = Ldd_FromCons(ldd, cons);
+  Ldd_Ref(cons_node);
 
-  // LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
-  // LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
+  LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
+  LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
 
-  // Cudd_Ref(pos_ldd);
-  // Cudd_Ref(neg_ldd);
+  Cudd_Ref(pos_ldd);
+  Cudd_Ref(neg_ldd);
+  fprintf(outfile, "done\n");
 
-  // if (nodes[0] == pos_ldd  && nodes[1] == neg_ldd)
-  //   passed = True;
+  if (nodes[0] == pos_ldd && nodes[1] == neg_ldd)
+    passed = True;
 
-  // Cudd_IterDerefBdd(CUDD, pos_ldd);
-  // Cudd_IterDerefBdd(CUDD, neg_ldd);
-  // Cudd_IterDerefBdd(CUDD, nodes[0]);
-  // Cudd_IterDerefBdd(CUDD, nodes[1]);
+  Cudd_IterDerefBdd(CUDD, pos_ldd);
+  Cudd_IterDerefBdd(CUDD, neg_ldd);
+  Cudd_IterDerefBdd(CUDD, nodes[0]);
+  Cudd_IterDerefBdd(CUDD, nodes[1]);
 
   free(nodes);
   fclose (outfile); 
   return passed;
 }
-
-
 
 void write_ldd_and_cons_to_file(LddManager* ldd, LddNode* f, lincons_t cons, const char *filename){
     FILE *outfile; 
