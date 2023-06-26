@@ -32,6 +32,7 @@ extern "C" {
   float Ldd_AverageDepthOfVarBoxTheory(LddManager *ldd, LddNode *f, int var);
   void Ldd_DumpDot( LddManager * ldd , LddNode *f , FILE * fp );
   void Ldd_DumpDotVerbose( LddManager * ldd , LddNode *f , FILE * fp );
+  void Ldd_DumpDotVerboseDAG( LddManager * ldd , LddNode *f , FILE * fp );
   int *Ldd_CountSigns(LddManager * ldd , LddNode *f);
   int* Ldd_CountOp(LddManager * ldd , LddNode *f);
   void Ldd_DumpBoxTheoryMap(FILE *fp, LddManager *m);
@@ -43,10 +44,14 @@ extern "C" {
   bool Ldd_IsOrderedAscendingByVariable(LddManager *ldd, LddNode* f);
   bool Ldd_IsOrderedAscendingByLevel(LddManager *ldd, LddNode* f);
 
+  LddNode *Ldd_MyAnd (LddManager *ldd, LddNode * f, LddNode *g);
+
   bool Ldd_SplitTest(LddManager *ldd, LddNode* f, LddNode* cons);
   bool Ldd_SplitTestAndSave(LddManager *ldd, LddNode* f, LddNode* cons, const char *dirname);
 
   LddNode **Ldd_SplitBoxTheory(LddManager *m, LddNode* f, lincons_t cons);
+
+  LddNode **Ldd_Split(LddManager *ldd, LddNode * f, LddNode *g);
 
   bool Ldd_Equal(LddManager * ldd1 , LddNode *f1, LddManager * ldd2 , LddNode *f2);
   bool Ldd_EqualRefLeq(LddManager * ldd1 , LddNode *f1, LddManager * ldd2 , LddNode *f2);

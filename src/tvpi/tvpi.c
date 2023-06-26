@@ -25,6 +25,8 @@ static tvpi_cst_t zero = NULL;
 LddNode* tvpi_to_ldd(LddManager *m, tvpi_cons_t c);
 void tvpi_print_cst (FILE *f, tvpi_cst_t k);
 
+LddNode **Ldd_Split(LddManager *ldd, LddNode * f, LddNode *g);
+
 /* code */
 
 #define True 1
@@ -346,20 +348,6 @@ int Ldd_DumpDotVerboseRecur( LddManager * ldd , int idx, LddNode *f ,FILE * fp )
     }
   }
 
-  /*
-  <<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
-    <TR>
-      <TD> index </TD><TD> 132 </TD>
-    </TR>
-    <TR>
-      <TD> refs </TD><TD> 3 </TD>
-    </TR>
-    <TR>
-      <TD> cons </TD><TD> x5 &le; 3 </TD>
-    </TR>
-  </TABLE>>
-  */
-
   LddNode* F = Cudd_Regular(f);
   int my_idx = idx;
   fprintf(fp, "node%d [label=", my_idx);
@@ -409,6 +397,68 @@ void Ldd_DumpDotVerbose( LddManager * ldd , LddNode *f , FILE * fp ) {
     fprintf(fp, "start -> node%d [style=dotted];\n", next_idx);
   else
     fprintf(fp, "start -> node%d [style=solid];\n", next_idx);
+
+  fprintf(fp, "}\n");
+}
+
+ LddNode *Ldd_DumpDotVerboseDAGRecur(LddManager * ldd, LddNode *f ,FILE * fp ) {
+
+  if (Cudd_IsConstant(f)) {
+    if (f == Ldd_GetTrue(ldd)) {
+      return 1;
+    }
+    if (f == Ldd_GetFalse(ldd)) {
+      fprintf(fp, "node0 [label=0, shape=square];\n");
+      return 0;
+    }
+  }
+
+  LddNode *F = Cudd_Regular(f);
+  LddNode *my_ptr = F;
+  fprintf(fp, "node%lu [label=", my_ptr);
+
+  fprintf(fp, "<<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\"> ");
+  fprintf(fp, "<TR><TD> index </TD><TD> %d </TD></TR>", F->index);
+  fprintf(fp, "<TR><TD> refs </TD><TD> %d </TD></TR>", F->ref);
+  fprintf(fp, "<TR><TD> level </TD><TD> %d </TD></TR>", CUDD->perm[F->index]);
+  fprintf(fp, "<TR><TD> cons </TD><TD>");
+
+  dump_html_boxtheory_tvpi_cons((tvpi_cons_t)Ldd_GetCons(ldd, f), fp);
+
+  fprintf(fp, " </TD></TR></TABLE>>, shape=none");
+  fprintf(fp, "];\n");
+
+  LddNode *my_else_ptr = Ldd_DumpDotVerboseDAGRecur(ldd, Ldd_Regular(Ldd_E(f)), fp);
+  LddNode *my_then_ptr = Ldd_DumpDotVerboseDAGRecur(ldd, Ldd_Regular(Ldd_T(f)), fp);
+
+  if (Cudd_IsComplement(Ldd_E(f)))
+    fprintf(fp, "node%lu -> node%lu [style=dotted, color=red];\n", my_ptr, my_else_ptr);
+  else
+    fprintf(fp, "node%lu -> node%lu [style=dashed, color=red];\n", my_ptr, my_else_ptr);
+
+  if (Cudd_IsComplement(Ldd_T(f)))
+    fprintf(fp, "node%lu -> node%lu [style=dotted, color=blue];\n", my_ptr, my_then_ptr);
+  else
+    fprintf(fp, "node%lu -> node%lu [style=solid, color=blue];\n", my_ptr, my_then_ptr);
+  
+  return my_ptr;
+}
+
+void Ldd_DumpDotVerboseDAG( LddManager * ldd , LddNode *f , FILE * fp ) {
+
+  fprintf(fp,"digraph LDD {\n");
+
+  fprintf(fp, "start [label=F, shape=square];\n");
+  fprintf(fp, "node%lu [label=1, shape=square];\n", f); 
+  
+  idx_counter = 2;
+
+  LddNode *next_idx = Ldd_DumpDotVerboseDAGRecur(ldd, Ldd_Regular(f), fp);
+
+  if (Cudd_IsComplement(f))
+    fprintf(fp, "start -> node%lu [style=dotted];\n", next_idx);
+  else
+    fprintf(fp, "start -> node%lu [style=solid];\n", next_idx);
 
   fprintf(fp, "}\n");
 }
@@ -728,51 +778,134 @@ pair_LddNode_t new_pair_LddNode() {
   return pair;
 }
 
+bool pair_is_valid(pair_LddNode_t pair) {
+  return pair.pos != NULL && pair.neg != NULL;
+}
+
+//  _________________________________________________________________________________________________
+// |________________________________________|  SPLIT CACHE  |________________________________________|
+
+// #define NO_CACHE
+
+DdNode *Ldd_SplitToken(DdManager *cudd_manager, DdNode *f, DdNode *g) {return(NULL);}
 
 
+#ifdef NO_CACHE
 
-pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, int index, bool complement) {
+void splitCacheInsert(DdManager *cudd_manager, LddNode *f, LddNode *cons,  bool complement, pair_LddNode_t result) {
+  return;
+}
 
-  // fprintf(stdout, "about to start insert cobstraint\n");
+pair_LddNode_t splitCacheLookup(DdManager *cudd_manager, LddNode *f, LddNode *cons, bool complement) {
+  return new_pair_LddNode();
+}
 
-  int cons_index = index;
-  // fprintf(stdout, "extracted index: %d\n", cons_index);
+void splitCacheInit() {
+  return;
+}
+
+#else
+
+#define CACHE_STACK_SIZE 1024*8
+#define SPLIT_TAG 0x8e
+
+pair_LddNode_t split_cache_stack[CACHE_STACK_SIZE];
+size_t split_cache_size;
+
+void splitCacheInit() {
+  split_cache_size = 0;
+}
+
+// DdNode *Ldd_Split(DdManager *man ,DdNode *f ,DdNode *g) {return NULL;}
+
+pair_LddNode_t splitCacheLookup(DdManager *cudd_manager, LddNode *f, LddNode *cons, bool complement) {
+
+  LddNode *compl_node = complement ? cudd_manager->one : Cudd_Not(cudd_manager->one);
 
   pair_LddNode_t result = new_pair_LddNode();
-  //fprintf(stdout, "created pair result\n");
+  pair_LddNode_t *result_ptr = (pair_LddNode_t *) cuddCacheLookup(cudd_manager, SPLIT_TAG, f, cons, compl_node);
 
+  if (result_ptr){
+    result.pos = result_ptr->pos;
+    result.neg = result_ptr->neg;
+    // fprintf(stdout, "hit in the cache\n");
+  }
+  return result;
+}
+
+void splitCacheInsert(DdManager *cudd_manager, LddNode *f, LddNode *cons,  bool complement, pair_LddNode_t result) {
+
+  if (split_cache_size >= CACHE_STACK_SIZE) {
+    // fprintf(stdout, "cache stack filled up\n");
+    return;
+  }
+  
+  LddNode *compl_node = complement ? cudd_manager->one : Cudd_Not(cudd_manager->one);
+  split_cache_stack[split_cache_size] = result;
+  cuddCacheInsert(cudd_manager, SPLIT_TAG, f, cons, compl_node, (DdNode *) &split_cache_stack[split_cache_size]);
+
+  ++split_cache_size;
+  return;
+}
+
+
+pair_LddNode_t splitCacheLookup2(DdManager *cudd_manager, LddNode *f, LddNode *g) {
+
+  pair_LddNode_t result = new_pair_LddNode();
+  pair_LddNode_t *result_ptr = (pair_LddNode_t *) cuddCacheLookup2(cudd_manager, (DD_CTFP)Ldd_SplitToken, f, g);
+
+  if (result_ptr){
+    result.pos = result_ptr->pos;
+    result.neg = result_ptr->neg;
+  }
+  return result;
+}
+
+void splitCacheInsert2(DdManager *cudd_manager, LddNode *f, LddNode *g, pair_LddNode_t result) {
+
+  if (split_cache_size >= CACHE_STACK_SIZE) {
+    // fprintf(stdout, "cache stack filled up\n");
+    return;
+  }
+  
+  split_cache_stack[split_cache_size] = result;
+  cuddCacheInsert2(cudd_manager, (DD_CTFP)Ldd_SplitToken, f, g, (DdNode *) &split_cache_stack[split_cache_size]);
+
+  ++split_cache_size;
+  return;
+}
+
+#endif
+
+//  _________________________________________________________________________________________________
+// |______________________________________|  END SPLIT CACHE  |______________________________________|
+
+pair_LddNode_t Split_InsertConstraint(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
+
+  int cons_index = cons->index;
+  pair_LddNode_t result = new_pair_LddNode();
   LddNode *one =  DD_ONE(CUDD);
   LddNode *zero = Cudd_Not(one);
-  //fprintf(stdout, "created ones and zero\n");
 
   bool node_comp = Cudd_IsComplement(f) ? !complement : complement;
 
   if (node_comp) {
-    // fprintf(stdout, "inside node_comp\n");
     result.pos = lddUniqueInter(ldd, cons_index, Cudd_Regular(f), one);
     result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Regular(f));
-    // Ldd_DumpDot(ldd, result.pos, stdout);
-    // Ldd_DumpDot(ldd, result.neg, stdout);
   } else {
-    // fprintf(stdout, "inside !node_comp\n");
     result.pos = lddUniqueInter(ldd, cons_index, Cudd_Regular(f), zero);
     result.pos = Cudd_Not(result.pos);
     result.neg = lddUniqueInter(ldd, cons_index, one, Cudd_Complement(f));
   }
   if (!complement) {
-    // fprintf(stdout, "inside !complement\n");
     result.pos = Cudd_Not(result.pos);
     result.neg = Cudd_Not(result.neg);
   }
 
-  // fprintf(stdout, "finished insert cobstraint with:\n");
-  // Ldd_DumpDot(ldd, result.pos, stdout);
-  // Ldd_DumpDot(ldd, result.neg, stdout);
+  splitCacheInsert(CUDD, f, cons, complement, result);
 
   return result;
 }
-
-// added comment lol
 
 pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
   
@@ -786,7 +919,6 @@ pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, LddNode* c
       result.neg = one;
     } else if (f == zero){
       result.neg = cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
-      // Cudd_Ref(cons);
       result.pos = Cudd_Complement(result.neg);
     } else {
       UNREACHABLE("the ldd f passed was constant but is not either one or zero");
@@ -794,7 +926,6 @@ pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, LddNode* c
   } else {
     if (f == one) {
       result.pos = cons; // NOTE: increment ref?? Ldd_FromCons(ldd, cons);
-      // Cudd_Ref(cons);
       result.neg = Cudd_Complement(result.pos);
     } else if (f == zero){
       result.pos = zero;
@@ -803,6 +934,9 @@ pair_LddNode_t Split_HandleConstantCases(LddManager *ldd, LddNode* f, LddNode* c
       UNREACHABLE("the ldd f passed was constant but is not either one or zero");
     }
   }
+
+  splitCacheInsert(CUDD, f, cons, complement, result);
+
   return result;
 }
 
@@ -862,6 +996,7 @@ bool tvpi_cst_eq(tvpi_cst_t left, tvpi_cst_t right) {
   return i == 0;
 }
 
+
 Split_action_t  Split_ChooseAction(LddManager *ldd, LddNode* f, LddNode* cons) {
 
   tvpi_cst_t f_cst = node_cst(ldd, f);
@@ -899,7 +1034,7 @@ Split_action_t  Split_ChooseAction(LddManager *ldd, LddNode* f, LddNode* cons) {
 }
 
 pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
-  assert(node_var(ldd, f) == cons_var(cons));
+  // assert(node_var(ldd, f) == cons_var(cons));
 
   LddNode *one =  DD_ONE(CUDD);
   LddNode *zero = Ldd_Not(one);
@@ -989,9 +1124,6 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
         result.neg = Cudd_Not(result.neg);
       }
     }
-    // Ldd_DumpDot(ldd, result.neg, stdout);
-    // Ldd_DumpDot(ldd, result.pos, stdout);
-    return result;
     break;
   case SUBS_THEN:
 
@@ -1028,7 +1160,6 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
         result.neg = Cudd_Not(result.neg);
       }
     }
-    return result;
   break;
   case SUBS_ELSE:
     if (node_comp) {   // node_comp = True
@@ -1062,7 +1193,6 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
       result.pos = Cudd_Not(result.pos);
       result.neg = Cudd_Not(result.neg);
     }
-    return result;
   break;
   case RECUR_ELSE:
     if (Cudd_IsComplement(f))
@@ -1072,36 +1202,16 @@ pair_LddNode_t Split_PlaceConstraint(LddManager *ldd, LddNode* f, LddNode* cons,
 
     result.pos = Cudd_NotCond(lddUniqueInter(ldd, f_index, t, tmp_result.pos), Cudd_IsComplement(f));
     result.neg = Cudd_NotCond(tmp_result.neg, Cudd_IsComplement(f));
-
-    return result;
-  /*
-    // code
-
-    // LddNode *recur_e = e;
-
-    // if (Cudd_IsComplement(f))
-    //   complement = !complement;
-
-
-    while(action = Split_ChooseAction(ldd, recur_e, cons) == RECUR_ELSE) {
-      recur_e = Cudd_E(recur_e);
-      if (Cudd_IsComplement(recur_e))
-        complement = !complement;
-    }
-
-    // pair_LddNode_t tmp_result = Split_PlaceConstraint(ldd, recur_e, cons, complement);
-
-
-*/
-
   break;
   default:
-    fprintf(stdout, "TODO in Split_PlaceConstraint\n");
-    exit(1);
+    UNREACHABLE("Split_PlaceConstraint");
   break;
   }
 
-  UNREACHABLE("impossible action");
+  if (Cudd_Regular(f)->ref != 1)
+    splitCacheInsert(CUDD, f, cons, complement, result);
+
+  return result;
 } 
 
 int node_level(LddManager *ldd, LddNode* f) {
@@ -1110,43 +1220,46 @@ int node_level(LddManager *ldd, LddNode* f) {
 
 pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* cons, bool complement) {
 
-  // fprintf(stdout, "abput to extract index from cons\n");
+
+  LddNode *F = Cudd_Regular(f);
+
+  if (F->ref != 1) {
+    pair_LddNode_t r = splitCacheLookup(CUDD, f, cons, complement);
+    if (pair_is_valid(r)) 
+      return r;
+  }
+
   int cons_index = cons->index;
-  // fprintf(stdout, "index extracted from cons: %d\n", cons_index);
+
   if (Cudd_IsConstant(f)) {
     return Split_HandleConstantCases(ldd, f, cons, complement);
   }
-
-  // if (node_var(ldd, f) == cons_var(cons)) {
-  //   return Split_PlaceConstraint(ldd, f, cons, complement);
-  // }
 
   if (node_var(ldd, f) == node_var(ldd, cons)) {
     return Split_PlaceConstraint(ldd, f, cons, complement);
   }
 
   if (node_level(ldd, f) > node_level(ldd, cons)) {
-    return Split_InsertConstraint(ldd, f, cons_index, complement);
+    return Split_InsertConstraint(ldd, f, cons, complement);
   }
 
+  bool orig_comple = complement;
   if (Cudd_IsComplement(f))
     complement = !complement;
 
   pair_LddNode_t result = new_pair_LddNode();
 
-
-  // fprintf(stdout, "about to start recursion on:\n");
-  // Ldd_DumpDot(ldd, Cudd_T(f), stdout);
-  // Ldd_DumpDot(ldd, Cudd_E(f), stdout);
   int index = Cudd_Regular(f)->index;
 
   pair_LddNode_t then_pair = Ldd_SplitBoxTheoryRecur(ldd, Cudd_T(f), cons, complement);
   pair_LddNode_t else_pair = Ldd_SplitBoxTheoryRecur(ldd, Cudd_E(f), cons, complement);
 
-  // here we check if we have to propagate the negation up the tree (i.e if the then edge is complemented)
-
+  // here we check if we have to propagate the negation up the 
+  // tree (i.e if the then edge is complemented)
+  
   if (else_pair.pos == then_pair.pos) { 
-    // fprintf(stdout, "inside if (else_pair.pos == then_pair.pos)\n");
+    // Cudd_Ref(then_pair.pos);
+    // Cudd_IterDerefBdd(CUDD, then_pair.pos);
     result.pos = else_pair.pos;
   } else if (Cudd_IsComplement(then_pair.pos)) {
     result.pos = lddUniqueInter(ldd, index, Cudd_Not(then_pair.pos), Cudd_Not(else_pair.pos));
@@ -1156,6 +1269,8 @@ pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* con
   }
 
   if (else_pair.neg == then_pair.neg) { 
+    // Cudd_Ref(then_pair.neg);
+    // Cudd_IterDerefBdd(CUDD, then_pair.neg);
     result.neg = else_pair.neg;
   } else if (Cudd_IsComplement(then_pair.neg)) {
     result.neg = lddUniqueInter(ldd, index, Cudd_Not(then_pair.neg), Cudd_Not(else_pair.neg));
@@ -1169,10 +1284,13 @@ pair_LddNode_t Ldd_SplitBoxTheoryRecur(LddManager *ldd, LddNode* f, LddNode* con
     result.neg = Cudd_Not(result.neg);
   }
 
+  if (F->ref != 1)
+    splitCacheInsert(CUDD, f, cons, orig_comple, result);
+
   return result;
 }
 
-LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
+LddNode **Ldd_SplitBoxTheoryAux(LddManager *ldd, LddNode* f, lincons_t cons) {
 
   tvpi_cons_t tvpi_cons = (tvpi_cons_t) cons;
   bool complement = False;
@@ -1186,14 +1304,8 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
 
   pair_LddNode_t result = new_pair_LddNode();
 
-  // Ldd_GetTheory(ldd)->print_lincons(stdout, cons);
-
   LddNode *cons_node = Ldd_FromCons(ldd, cons);
   Cudd_Ref(cons_node);
-  // fprintf(stdout, "\n");
-  // Ldd_DumpDot(ldd, cons_node, stdout);
-
-  //fprintf(stdout, "split about to start\n");
   
   // here we handle top and bottom cases (the ldd f passed is constant: either 0 or 1)
   if (Cudd_IsConstant(f)) {
@@ -1203,8 +1315,6 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
   else {   
     result = Ldd_SplitBoxTheoryRecur(ldd, f, cons_node, False);
   }
-
-  //fprintf(stdout, "split done!!\n");
 
   if (complement)
     pair_LddNode_switch(&result);
@@ -1217,41 +1327,57 @@ LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
   return nodes;
 }
 
+LddNode **Ldd_SplitBoxTheory(LddManager *ldd, LddNode* f, lincons_t cons) {
+
+  LddNode **res; 
+  
+  do {
+    CUDD->reordered = 0;
+    res = Ldd_SplitBoxTheoryAux(ldd, f, cons);
+  } while (CUDD->reordered == 1);
+  return (res);
+}
+
 bool Ldd_SplitTest(LddManager *ldd, LddNode* f, LddNode* node_cons) {
   lincons_t cons = Ldd_GetCons(ldd, node_cons);
-  bool passed = False;
-  FILE *outfile; 
-  outfile = fopen("./debug.txt","a");
 
-  fprintf(outfile, "split... ");
-  LddNode** nodes = Ldd_SplitBoxTheory(ldd, f, cons);
+  LddNode* cons_node = Ldd_FromCons(ldd, cons);
+  Ldd_Ref(cons_node);
+
+  bool passed = False;
+  // FILE *outfile; 
+  // outfile = fopen("./debug.txt","a");
+
+  // fprintf(outfile, "split... ");
+
+  LddNode** nodes = Ldd_Split(ldd, f, cons_node);
+
   Cudd_Ref(nodes[0]);
   Cudd_Ref(nodes[1]);
-  fprintf(outfile, "done\n");
+  // fprintf(outfile, "done\n");
 
   // LDD_AND_SPLIT
 
-  fprintf(outfile, "and... ");
-  LddNode* cons_node = Ldd_FromCons(ldd, cons);
-  Ldd_Ref(cons_node);
+  // fprintf(outfile, "and... ");
 
   LddNode* pos_ldd = Ldd_And(ldd, f, cons_node);
   LddNode* neg_ldd = Ldd_And(ldd, f, Cudd_Not(cons_node));
 
   Cudd_Ref(pos_ldd);
   Cudd_Ref(neg_ldd);
-  fprintf(outfile, "done\n");
 
-  if (nodes[0] == pos_ldd && nodes[1] == neg_ldd)
-    passed = True;
+  // fprintf(outfile, "done\n");
 
-  Cudd_IterDerefBdd(CUDD, pos_ldd);
-  Cudd_IterDerefBdd(CUDD, neg_ldd);
-  Cudd_IterDerefBdd(CUDD, nodes[0]);
-  Cudd_IterDerefBdd(CUDD, nodes[1]);
+  // if (nodes[0] == pos_ldd && nodes[1] == neg_ldd)
+  //   passed = True;
+
+  Cudd_Deref(pos_ldd);
+  Cudd_Deref(neg_ldd);
+  Cudd_Deref(nodes[0]);
+  Cudd_Deref(nodes[1]);
 
   free(nodes);
-  fclose (outfile); 
+  // fclose (outfile); 
   return passed;
 }
 
@@ -1261,7 +1387,6 @@ void write_ldd_and_cons_to_file(LddManager* ldd, LddNode* f, lincons_t cons, con
     Ldd_DumpDotWithCons(ldd, f, cons, outfile);
     fclose (outfile); 
 }
-
 
 bool Ldd_SplitTestAndSave(LddManager *ldd, LddNode* f, LddNode* node_cons, const char *dirname) {
 
@@ -1434,6 +1559,425 @@ bool Ldd_IsOrderedAscendingByLevel(LddManager *ldd, LddNode* f) {
           Ldd_IsOrderedAscendingByLevel(ldd, E);
 }
 
+/////////////////////////////////////////////////////////////////
+
+static unsigned long int stronger_cons_counter = 0;
+
+LddNode *lddMyAndRecur (LddManager * ldd, LddNode *f, LddNode *g);
+
+LddNode *Ldd_MyAnd (LddManager *ldd, LddNode * f, LddNode *g) {
+  LddNode *res;
+  stronger_cons_counter = 0;
+  do {
+    CUDD->reordered = 0;
+    res = lddMyAndRecur (ldd, f, g);
+  } while (CUDD->reordered == 1);
+
+  // fprintf(stdout, "      - stronger_cons_counter: %d\n", stronger_cons_counter);
+
+  return (res);
+}
+
+LddNode * 
+lddMyAndRecur (LddManager * ldd,
+	     LddNode *f,
+	     LddNode *g)
+{
+  DdManager * manager;
+  DdNode *F, *fv, *fnv, *G, *gv, *gnv;
+  DdNode *one, *r, *t, *e;
+  unsigned int topf, topg, index;
+
+  lincons_t vCons;
+  
+
+  manager = CUDD;
+  statLine(manager);
+  one = DD_ONE(manager);
+
+  /* Terminal cases. */
+  F = Cudd_Regular(f);
+  G = Cudd_Regular(g);
+
+  if (F == G) {
+    if (f == g) 
+      return(f);
+    else 
+      return(Cudd_Not(one));
+  }
+  if (F == one) {
+    if (f == one) 
+      return(g);
+    else 
+      return(f);
+  }
+  if (G == one) {
+    if (g == one) 
+      return(f);
+    else 
+      return(g);
+  }
+
+  // /* At this point f and g are not constant. */
+  // if (f > g) { /* Try to increase cache efficiency. */
+  //   DdNode *tmp = f;
+  //   f = g;
+  //   g = tmp;
+  //   F = Cudd_Regular(f);
+  //   G = Cudd_Regular(g);
+  // }
+
+  // /* Check cache. */
+  // if (F->ref != 1 || G->ref != 1) {
+  //   r = cuddCacheLookup2(manager, (DD_CTFP)Ldd_And, f, g);
+  //   if (r != NULL)  
+  //     return(r);
+  // }
+
+  /* Get the levels */
+  /* Here we can skip the use of cuddI, because the operands are known
+  ** to be non-constant.
+  */
+  topf = manager->perm[F->index];
+  topg = manager->perm[G->index];
+
+  /* Compute cofactors. */
+  if (topf <= topg) {
+    index = F->index;
+    fv = cuddT(F);
+    fnv = cuddE(F);
+    if (Cudd_IsComplement(f)) {
+      fv = Cudd_Not(fv);
+      fnv = Cudd_Not(fnv);
+    }
+  } else {
+    index = G->index;
+    fv = fnv = f;
+  }
+  
+  if (topg <= topf) {
+    gv = cuddT(G);
+    gnv = cuddE(G);
+    if (Cudd_IsComplement(g)) {
+      gv = Cudd_Not(gv);
+      gnv = Cudd_Not(gnv);
+    }
+  } else {
+    gv = gnv = g;
+  }
+
+
+  /** 
+   * Get the constraint of the root node 
+   */
+  vCons = ldd->ddVars [index];
+
+  /** 
+   *
+   * Ldd part of the cofactor
+   * 
+   * If f and g have the same term, simplify the THEN part of the
+   * non-root diagram. This eliminates a redundant test. This assumes
+   * that if a constraint A is less than in diagram ordering than B
+   * then A implies B.
+   * 
+   * We check whether f and g have the same constraint using the
+   * following facts: 
+   *   vInfo is the constraint of the root diagram
+   *   gv == g iff g is not the root diagram
+   *   fv == f iff f is not the root diagram
+   */
+  if (gv == g) {
+
+    lincons_t gCons = ldd->ddVars [G->index];
+    
+    if (THEORY->is_stronger_cons (vCons, gCons)) {
+      // stronger_cons_counter++;
+      gv = cuddT (G);
+      if (Cudd_IsComplement (g))
+        gv = Cudd_Not (gv);
+    }
+  } else if (fv == f) {
+    
+    lincons_t fCons = ldd->ddVars [F->index];
+    
+    if (THEORY->is_stronger_cons (vCons, fCons)) {
+      // stronger_cons_counter++;
+      fv = cuddT (F);
+      if (Cudd_IsComplement (f))
+        fv = Cudd_Not (fv);
+    }
+  }
+  
+  
+  
+  /* Here, fv, fnv are lhs and rhs of f, 
+           gv, gnv are lhs and rhs of g,
+	   index is the index of the new root variable 
+  */
+
+  t = lddMyAndRecur(ldd, fv, gv);
+  if (t == NULL) 
+    return(NULL);
+  cuddRef(t);
+  
+  e = lddMyAndRecur(ldd, fnv, gnv);
+  if (e == NULL) {
+    Cudd_IterDerefBdd(manager, t);
+    return(NULL);
+  }
+  cuddRef(e);
+
+  if (t == e) {
+    r = t;
+  } else {
+    if (Cudd_IsComplement(t)) {
+      /* push the negation up from t to r */
+      r = lddUniqueInter(ldd, index, Cudd_Not(t),Cudd_Not(e));
+      if (r == NULL) {
+        Cudd_IterDerefBdd(manager, t);
+        Cudd_IterDerefBdd(manager, e);
+        return(NULL);
+      }
+      r = Cudd_Not (r);
+    } else {
+      r = lddUniqueInter(ldd,index, t, e);
+      if (r == NULL) {
+        Cudd_IterDerefBdd(manager, t);
+        Cudd_IterDerefBdd(manager, e);
+        return(NULL);
+      }
+    }
+  }
+
+  /** Unlike in with BDDs, t and e may become garbage at this
+      point. Must clean up with IterDerefBdd */
+  cuddRef (r);
+  Cudd_IterDerefBdd (CUDD, t);
+  Cudd_IterDerefBdd (CUDD, e);
+
+  // if (F->ref != 1 || G->ref != 1)
+  //   cuddCacheInsert2(manager, (DD_CTFP)Ldd_And, f, g, r);
+
+  cuddDeref (r);
+  return r;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pair_LddNode_t new_pair(LddNode *pos, LddNode* neg) {
+  pair_LddNode_t pair = new_pair_LddNode();
+  pair.pos = pos;
+  pair.neg = neg;
+  return pair;
+}
+
+pair_LddNode_t lddSplitRecur(LddManager * ldd, LddNode *f, LddNode *g);
+
+LddNode **Ldd_Split(LddManager *ldd, LddNode * f, LddNode *g) {
+
+  pair_LddNode_t result = new_pair_LddNode();
+
+  do {
+    CUDD->reordered = 0;
+    result = lddSplitRecur (ldd, f, g);
+  } while (CUDD->reordered == 1);
+
+  LddNode **nodes = (LddNode **)malloc(sizeof(LddNode *)*2);
+  
+  nodes[0] = result.pos;
+  nodes[1] = result.neg;
+
+  return nodes;
+}
+
+pair_LddNode_t
+lddSplitRecur(LddManager * ldd,
+	     LddNode *f,
+	     LddNode *g)
+{
+  DdManager * manager;
+  DdNode *F, *fv, *fnv, *G, *gv, *gnv;
+  DdNode *one, *zero, *r, *t, *e;
+  unsigned int topf, topg, index;
+  pair_LddNode_t then_pair, else_pair, result;
+
+  lincons_t vCons;
+  
+  manager = CUDD;
+  statLine(manager);
+  one = DD_ONE(manager);
+  zero = Cudd_Not(one);
+
+  F = Cudd_Regular(f);
+  G = Cudd_Regular(g);
+
+  if (F == G) {
+    if (f == g) 
+      return new_pair(f, zero);
+    else 
+      return new_pair(zero, f);
+  }
+  if (F == one) {
+    if (f == one) 
+      return new_pair(g, Cudd_Not(g));
+    else 
+      return new_pair(zero, zero);
+  }
+  if (G == one) {
+    if (g == one) 
+      return new_pair(f, zero);
+    else 
+      return new_pair(zero, f);
+  }
+
+  /* Check cache. */
+  if (F->ref != 1 || G->ref != 1) {
+    result = splitCacheLookup2(manager, f, g);
+    if (pair_is_valid(result))  
+      return(result);
+  }
+
+  topf = manager->perm[F->index];
+  topg = manager->perm[G->index];
+
+  if (topf <= topg) {
+    index = F->index;
+    fv = cuddT(F);
+    fnv = cuddE(F);
+    if (Cudd_IsComplement(f)) {
+      fv = Cudd_Not(fv);
+      fnv = Cudd_Not(fnv);
+    }
+  } else {
+    index = G->index;
+    fv = fnv = f;
+  }
+  
+  if (topg <= topf) {
+    gv = cuddT(G);
+    gnv = cuddE(G);
+    if (Cudd_IsComplement(g)) {
+      gv = Cudd_Not(gv);
+      gnv = Cudd_Not(gnv);
+    }
+  } else {
+    gv = gnv = g;
+  }
+
+  vCons = ldd->ddVars [index];
+
+  if (gv == g) {
+
+    lincons_t gCons = ldd->ddVars [G->index];
+    
+    if (THEORY->is_stronger_cons (vCons, gCons)) {
+      gv = cuddT (G);
+      if (Cudd_IsComplement (g))
+        gv = Cudd_Not (gv);
+    }
+  } else if (fv == f) {
+    
+    lincons_t fCons = ldd->ddVars [F->index];
+    
+    if (THEORY->is_stronger_cons (vCons, fCons)) {
+      fv = cuddT (F);
+      if (Cudd_IsComplement (f))
+        fv = Cudd_Not (fv);
+    }
+  }
+  
+  then_pair = lddSplitRecur(ldd, fv, gv);
+  if (!pair_is_valid(then_pair))
+    return(then_pair);
+  cuddRef(then_pair.pos);
+  cuddRef(then_pair.neg);
+  
+  else_pair = lddSplitRecur(ldd, fnv, gnv);
+  if (!pair_is_valid(else_pair)) {
+    Cudd_IterDerefBdd(manager, then_pair.pos);
+    Cudd_IterDerefBdd(manager, then_pair.neg);
+    return(else_pair);
+  }
+  cuddRef(else_pair.pos);
+  cuddRef(else_pair.neg);
+
+  result = new_pair_LddNode(); 
+
+  t = then_pair.pos;
+  e = else_pair.pos;
+
+  if (t == e) {
+    r = t;
+  } else {
+    if (Cudd_IsComplement(t)) {
+
+      r = lddUniqueInter(ldd, index, Cudd_Not(t), Cudd_Not(e));
+
+      if (r == NULL) {
+        Cudd_IterDerefBdd(manager, t);
+        Cudd_IterDerefBdd(manager, e);
+        return(new_pair_LddNode());
+      }
+      r = Cudd_Not (r);
+    } else {
+      r = lddUniqueInter(ldd, index, t, e);
+
+      if (r == NULL) {
+        Cudd_IterDerefBdd(manager, t);
+        Cudd_IterDerefBdd(manager, e);
+        return(new_pair_LddNode());
+      }
+    }
+  }
+
+  result.pos = r;
+
+  t = then_pair.neg;
+  e = else_pair.neg;
+
+  if (t == e) {
+    r = t;
+  } else {
+    if (Cudd_IsComplement(t)) {
+
+      r = lddUniqueInter(ldd, index, Cudd_Not(t),Cudd_Not(e));
+
+      if (r == NULL) {
+        Cudd_IterDerefBdd(manager, t);
+        Cudd_IterDerefBdd(manager, e);
+        return(new_pair_LddNode());
+      }
+      r = Cudd_Not (r);
+    } else {
+      r = lddUniqueInter(ldd,index, t, e);
+
+      if (r == NULL) {
+        Cudd_IterDerefBdd(manager, t);
+        Cudd_IterDerefBdd(manager, e);
+        return(new_pair_LddNode());
+      }
+    }
+  }
+
+  result.neg = r;
+
+  cuddRef(result.pos);
+  cuddRef(result.neg);
+  Cudd_IterDerefBdd (CUDD, then_pair.pos);
+  Cudd_IterDerefBdd (CUDD, then_pair.neg);
+  Cudd_IterDerefBdd (CUDD, else_pair.pos);
+  Cudd_IterDerefBdd (CUDD, else_pair.neg);
+
+  if (F->ref != 1 || G->ref != 1)
+    splitCacheInsert2(manager, f, g, result);
+
+  cuddDeref(result.pos);
+  cuddDeref(result.neg);
+  return result;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 static tvpi_cst_t 
 new_cst ()
@@ -3455,6 +3999,7 @@ tvpi_initialize_theory (tvpi_theory_t *t)
   if (zero == NULL)
     zero = tvpi_create_si_cst (0);
   
+  splitCacheInit();
   
   t->base.create_int_cst =  (constant_t(*)(int)) tvpi_create_si_cst;
   t->base.create_rat_cst = (constant_t(*)(long,long)) tvpi_create_si_rat_cst;

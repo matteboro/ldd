@@ -1,6 +1,6 @@
 import random
 
-VAR_NUM=8
+VAR_NUM=15
 
 code = f"""
 #include <sys/types.h>
@@ -10,11 +10,12 @@ code = f"""
 #include <time.h>
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include "cudd.h"
 #include "util.h"
 #include "ldd.h"
 #include "tvpi.h"
-
+#include <sys/time.h>
 
 #define AND_T(c,n) and_t->create_linterm ((c),(n))
 #define AND_C(n) and_t->create_int_cst(n)
@@ -37,18 +38,21 @@ void write_ldd_to_file(LddManager* ldd, LddNode* f, const char *filename, bool v
     fclose (outfile); 
 {"}"}
 
-void compare_ldd_and_split(LddManager* and_ldd, LddNode* and_f, LddManager* split_ldd, LddNode* split_f, lincons_t cons, int counter) {"{"}
+int total_test = 0;
+int test_passed = 0;
+long unsigned int and_tot_time = 0;
+long unsigned int split_tot_time = 0;
 
-{"}"}
+struct timeval stop, start;
 
 """
 
-NUM_TEST=100
+NUM_TEST= 10
 test_func_counter=0
-INTERM_LOOPS = 40
-TEST_LOOPS = 15
-BASIC_LOOPS = 30
-SPLIT_TEST_LOOPS = 10
+INTERM_LOOPS = 50
+TEST_LOOPS = 10
+BASIC_LOOPS = 50
+SPLIT_TEST_LOOPS = 100
 
 for f in range(NUM_TEST):
     test_code = f"""
@@ -153,50 +157,94 @@ void test{test_func_counter}() {"{"}
       split_cons = f"lincons_t split_c = SPLIT_CONS(x{var},{VAR_NUM},{cst});\n"
     
       test_code += f"""
+
+  /*########################################  TEST{test_func_counter}__{i}  ################################################*/ 
+
   {"{"}
-  // const char fn_split_pos[100] = "./deep_compare/{test_func_counter}_pos_split.dot";
-  // const char fn_split_neg[100] = "./deep_compare/{test_func_counter}_neg_split.dot";
-  // const char fn_and_pos[100] = "./deep_compare/{test_func_counter}_pos_and.dot";
-  // const char fn_and_neg[100] = "./deep_compare/{test_func_counter}_neg_and.dot";
-  
+  const char fn_split_pos[100] = "./deep_compare/{test_func_counter}_{i}_pos_split.dot";
+  const char fn_split_neg[100] = "./deep_compare/{test_func_counter}_{i}_neg_split.dot";
+  const char fn_and_pos[100] = "./deep_compare/{test_func_counter}_{i}_pos_and.dot";
+  const char fn_and_neg[100] = "./deep_compare/{test_func_counter}_{i}_neg_and.dot";
+  const char fn_and_bef[100] = "./deep_compare/{test_func_counter}_{i}_before_and.dot";
+  const char fn_split_bef[100] = "./deep_compare/{test_func_counter}_{i}_before_split.dot";
+
+  fprintf(stdout, "test with constraint: x{var} <= {cst}, started...\\n");
+
   {and_cons}
   {split_cons}
   
+  write_ldd_to_file(and_ldd, and_test{test_counter-1}, fn_and_bef, True);
+  write_ldd_to_file(split_ldd, split_test{test_counter-1}, fn_split_bef, True);
+
   // MY_SPLIT_IMPL
 
-  LddNode** nodes = Ldd_SplitBoxTheory(split_ldd, split_test{test_counter-1}, split_c);
+  gettimeofday(&start, NULL);
+
+  LddNode* split_cons_node = Ldd_FromCons(split_ldd, split_c);
+  Ldd_Ref(split_cons_node);
+
+  LddNode** nodes = Ldd_Split(split_ldd, split_test{test_counter-1}, split_cons_node);
 
   Cudd_Ref(nodes[0]);
   Cudd_Ref(nodes[1]);
-  
-  // write_ldd_to_file(split_ldd, nodes[0], fn_split_pos, True);
-  // write_ldd_to_file(split_ldd, nodes[1], fn_split_neg, True);
 
+  gettimeofday(&stop, NULL);
+  split_tot_time += (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
+  
   // LDD_AND_SPLIT
+
+  gettimeofday(&start, NULL);
 
   LddNode* cons_node = Ldd_FromCons(and_ldd, and_c);
   Ldd_Ref(cons_node);
 
   LddNode* pos_ldd = Ldd_And(and_ldd, and_test{test_counter-1}, cons_node);
-  LddNode* neg_ldd = Ldd_And(and_ldd, and_test{test_counter-1}, Cudd_Not(cons_node));
-
   Cudd_Ref(pos_ldd);
+
+  LddNode* neg_ldd = Ldd_And(and_ldd, and_test{test_counter-1}, Cudd_Not(cons_node));
   Cudd_Ref(neg_ldd);
   
-  // write_ldd_to_file(and_ldd, pos_ldd, fn_and_pos, True);
-  // write_ldd_to_file(and_ldd, neg_ldd, fn_and_neg, True);
-  
+  gettimeofday(&stop, NULL);
+  and_tot_time += (stop.tv_sec - start.tv_sec) * 1000000 + stop.tv_usec - start.tv_usec;
+
   bool pos_passed, neg_passed;
+  bool ref_pos_passed, ref_neg_passed;
 
-  if (!(pos_passed = Ldd_EqualRefLeq(and_ldd, pos_ldd, split_ldd, nodes[0])))
-    fprintf(stdout, "test number {test_func_counter}.{i} did not pass on positive result\\n");
+  if (!(pos_passed = Ldd_EqualRefLeq(and_ldd, pos_ldd, split_ldd, nodes[0]))) {"{"}
+    fprintf(stdout, "  test number {test_func_counter}.{i} did not pass on positive result\\n");
+    write_ldd_to_file(split_ldd, nodes[0], fn_split_pos, True);
+    write_ldd_to_file(and_ldd, pos_ldd, fn_and_pos, True);
+  {"}"}
 
-  if (!(neg_passed = Ldd_EqualRefLeq(and_ldd, neg_ldd, split_ldd, nodes[1])))
-    fprintf(stdout, "test number {test_func_counter}.{i} did not pass on negative result\\n");
+  if (!(neg_passed = Ldd_EqualRefLeq(and_ldd, neg_ldd, split_ldd, nodes[1]))) {"{"}
+    fprintf(stdout, "  test number {test_func_counter}.{i} did not pass on negative result\\n");
+    write_ldd_to_file(split_ldd, nodes[1], fn_split_neg, True);
+    write_ldd_to_file(and_ldd, neg_ldd, fn_and_neg, True);
+  {"}"}
 
-  if (neg_passed && pos_passed)
-    fprintf(stdout, "test number {test_func_counter}.{i} passed\\n");
+  if (!(ref_pos_passed = Ldd_EqualRefLeq(split_ldd, nodes[0], and_ldd, pos_ldd))) {"{"}
+    // fprintf(stdout, "  there is a difference in refs count on positive result \\n");
+    write_ldd_to_file(split_ldd, nodes[0], fn_split_pos, True);
+    write_ldd_to_file(and_ldd, pos_ldd, fn_and_pos, True);
+  {"}"}
 
+  if (!(ref_neg_passed = Ldd_EqualRefLeq(split_ldd, nodes[1], and_ldd, neg_ldd))) {"{"}
+    // fprintf(stdout, "  there is a difference in refs count on negative result \\n");
+    write_ldd_to_file(split_ldd, nodes[1], fn_split_neg, True);
+    write_ldd_to_file(and_ldd, neg_ldd, fn_and_neg, True);
+  {"}"}
+  
+  if (ref_pos_passed && ref_neg_passed) {"{"}
+    remove(fn_and_bef);
+    remove(fn_split_bef);
+  {"}"}
+  
+  if (neg_passed && pos_passed) {"{"}
+    fprintf(stdout, "  test number {test_func_counter}.{i} passed\\n");
+    ++test_passed;
+  {"}"}
+
+  ++total_test;
   free(nodes);
   {"}"}
 """
@@ -218,6 +266,10 @@ for i in range(NUM_TEST):
     code += f"  test{i}();\n"
   
 code += """
+  
+  fprintf(stdout, "out of a total of %d tests, %d have passed\\n", total_test, test_passed);
+  fprintf(stdout, "it took %lu us to execute the splits\\n", split_tot_time);
+  fprintf(stdout, "it took %lu us to execute the ands\\n", and_tot_time);
 }
 """
 
